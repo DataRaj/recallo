@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"gotel/handlers"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -13,7 +14,7 @@ func main() {
 	apiv1 := app.Group("api/v1")
 
 	app.Get("/", handleGetHi)
-	apiv1.Get("/user", handleUser)
+	apiv1.Get("/user", handlers.HandleUser)
 
 	app.Listen(*listenAddr)
 }
@@ -26,4 +27,3 @@ func handleGetHi(c fiber.Ctx) error {
 func handleUser(c fiber.Ctx) error {
 	return c.JSON(map[string]string{"user": "John Doe"})
 }
-
