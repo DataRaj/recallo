@@ -1,20 +1,31 @@
 package handlers
 
 import (
-	"gotel/types"
+	"context"
+	"gotel/db/collections"
 
 	"github.com/gofiber/fiber/v3"
 )
 
-func HandleUser(c fiber.Ctx) error {
-	// john := c.`json:"john going to be missed here!"`
-	u := types.User{
-		// ID:        "23423",
-		FirstName: "ladis",
-		LastName:  "washroom",
-	}
-	return c.JSON(u)
+type UserHandler struct {
+	userStore collections.UserStore
+}
 
+func NewUserHandler(userStore collections.UserStore) *UserHandler {
+	// john := c.`json:"john going to be missed here!"`
+	return &UserHandler{
+		userStore: userStore,
+	}
+}
+
+func (h *UserHandler) HandleGetUser(ctx fiber.Ctx) error {
+	id := ctx.Params("id")
+	c := context.Background()
+	user, err := h.userStore.GetUserByID(c, id)
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(user)
 }
 
 func GetUserById(c fiber.Ctx) error {
