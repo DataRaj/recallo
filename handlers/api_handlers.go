@@ -28,6 +28,6 @@ func (h *UserHandler) HandleGetUser(ctx fiber.Ctx) error {
 	return ctx.JSON(user)
 }
 
-func GetUserById(c fiber.Ctx) error {
-	return c.JSON(map[string]string{"userId": "23422"})
-}
+// func (h *UserHandler) HandleGetUsers(ctx fiber.Ctx) error {
+//
+// }

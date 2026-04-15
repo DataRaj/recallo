@@ -4,7 +4,6 @@ go 1.26.1
 
 require (
 	github.com/gofiber/fiber/v3 v3.1.0
-	go.mongodb.org/mongo-driver v1.17.9
 	go.mongodb.org/mongo-driver/v2 v2.5.0
 )
 

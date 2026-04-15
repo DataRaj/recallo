@@ -4,7 +4,6 @@ import (
 	"context"
 	"gotel/types"
 
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
@@ -30,7 +29,7 @@ func NewMongoUserStore(client *mongo.Client) *MongoUserStore {
 
 // this is for creating an mongo based function to fetch the user
 func (u *MongoUserStore) GetUserByID(ctx context.Context, id string) (*types.User, error) {
-	oid, _ := primitive.ObjectIDFromHex(id)
+	oid, _ := bson.ObjectIDFromHex(id)
 	var user types.User
 	if err := u.coll.FindOne(ctx, bson.M{"_id": (oid)}).Decode(&user); err != nil {
 		return nil, err
