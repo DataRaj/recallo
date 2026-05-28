@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+
 	"gotel/db/collections"
 	"gotel/handlers"
 
@@ -29,7 +30,6 @@ var config = fiber.Config{
 
 func main() {
 	client, err := mongo.Connect(options.Client().ApplyURI(dburi))
-
 	if err != nil {
 		panic(err)
 	}
@@ -60,6 +60,8 @@ func main() {
 	apiv1 := app.Group("api/v1")
 
 	apiv1.Get("/user", userHandler.HandleGetUser)
+
+	apiv1.Get("/users", userHandler.HandleGetUsers)
 	apiv1.Get("/user/:id", userHandler.HandleGetUser)
 
 	app.Listen(*listenAddr)

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+
 	"gotel/db/collections"
 
 	"github.com/gofiber/fiber/v3"
@@ -28,6 +29,10 @@ func (h *UserHandler) HandleGetUser(ctx fiber.Ctx) error {
 	return ctx.JSON(user)
 }
 
-// func (h *UserHandler) HandleGetUsers(ctx fiber.Ctx) error {
-//
-// }
+func (h *UserHandler) HandleGetUsers(ctx fiber.Ctx) error {
+	users, error := h.userStore.GetUsers(ctx.Context())
+	if error != nil {
+		return nil
+	}
+	return ctx.JSON(users)
+}
