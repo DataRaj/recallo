@@ -29,6 +29,7 @@ func (h *UserHandler) HandleGetUser(ctx fiber.Ctx) error {
 	return ctx.JSON(user)
 }
 
+// created new handle user here
 func (h *UserHandler) HandleGetUsers(ctx fiber.Ctx) error {
 	users, error := h.userStore.GetUsers(ctx.Context())
 	if error != nil {
