@@ -1,6 +1,6 @@
-# Gotel Reserves
+# Crud Application building and creating more proper structured project
 
-A hotel reservation API built with Go, Fiber, and MongoDB.
+A hotel reservation API built with Go, Chi, Fiber and MongoDB, Postgresql .
 
 ## Tech Stack
 
