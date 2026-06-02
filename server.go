@@ -1,68 +1,61 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
-	"fmt"
+	"log"
+	"net/http"
 
 	"gotel/db/collections"
 	"gotel/handlers"
 
-	"github.com/gofiber/fiber/v3"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
-const dburi = "mongodb://localhost:27017"
-
-// const dbName = "gotel-reservation"
-// const userColl = "user"
-//
-
-var config = fiber.Config{
-	ErrorHandler: func(c fiber.Ctx, err error) error {
-		// Define your error response structure
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"success": false,
-			"message": err.Error(),
-		})
-	},
-}
+const dbURI = "mongodb://localhost:27017"
 
 func main() {
-	client, err := mongo.Connect(options.Client().ApplyURI(dburi))
-	if err != nil {
-		panic(err)
-	}
+	listenAddr := flag.String("listenAddr", ":5000", "The listen address of the API server")
+	flag.Parse()
 
-	// coll := client.Database(dbName).Collection(userColl)
-	//
-	// user := types.User{
-	// 	FirstName: "Dat",
-	// 	LastName:  "Das",
-	// }
-	//
-	// ctx := context.Background()
-	// res, err := coll.InsertOne(ctx, user)
-	//
-	// if err != nil {
-	// 	fmt.Println(err)
-	// }
-	//
-	// fmt.Println(res)
+	client, err := mongo.Connect(options.Client().ApplyURI(dbURI))
+	if err != nil {
+		log.Fatalf("failed to connect to MongoDB: %v", err)
+	}
+	log.Println("Connected to MongoDB")
 
 	userStore := collections.NewMongoUserStore(client)
 	userHandler := handlers.NewUserHandler(userStore)
 
-	fmt.Println("Connected to MongoDB")
-	listenAddr := flag.String("listenAddr", ":5000", "The listen address of the API server")
-	app := fiber.New(config)
+	r := chi.NewRouter()
 
-	apiv1 := app.Group("api/v1")
+	// Global middleware stack
+	r.Use(middleware.RequestID)
+	r.Use(middleware.RealIP)
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
 
-	apiv1.Get("/user", userHandler.HandleGetUser)
+	// API v1 routes
+	r.Route("/api/v1", func(r chi.Router) {
+		r.Get("/users", userHandler.HandleGetUsers)
+		r.Get("/users/{id}", userHandler.HandleGetUser)
+	})
 
-	apiv1.Get("/users", userHandler.HandleGetUsers)
-	apiv1.Get("/user/:id", userHandler.HandleGetUser)
+	// 404 fallback
+	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]any{
+			"success": false,
+			"message": "route not found",
+		})
+	})
 
-	app.Listen(*listenAddr)
+	log.Printf("Server listening on %s", *listenAddr)
+	if err := http.ListenAndServe(*listenAddr, r); err != nil {
+		log.Fatalf("server error: %v", err)
+	}
 }
