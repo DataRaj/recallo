@@ -34,6 +34,10 @@ func main() {
 		}
 	}()
 
+	sig := <-shutdownCh
+
+	log.Fatalf("Shutdown signal recieved: %v", sig)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
