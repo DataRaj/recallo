@@ -1,27 +1,40 @@
-# Crud Application building and creating more proper structured project
+# gotel-reserves
 
-A hotel reservation API built with Go, Chi, Fiber and MongoDB, Postgresql .
+A hotel reservation API built with Go, using **chi** for routing, **MongoDB** as the primary database, and a **PostgreSQL** layer scaffolded for future expansion.
 
 ## Tech Stack
 
-- **Go 1.26** — language runtime
-- **Fiber v3** — HTTP framework
-- **MongoDB v2 Driver** — database layer
+| Layer        | Technology                                  |
+| ------------ | ------------------------------------------- |
+| Language     | Go 1.26                                     |
+| HTTP Router  | `go-chi/chi` v5 (idiomatic `net/http`)      |
+| Primary DB   | MongoDB v2 Driver                           |
+| Secondary DB | PostgreSQL (scaffolded via `database/sql`)  |
+| Config       | `cleanenv` + `.env` file                    |
 
 ## Project Structure
 
 ```
 .
-├── server.go              # entrypoint, routes, Fiber config
+├── cmd/
+│   └── api/
+│       └── main.go              # entrypoint — server bootstrap & graceful shutdown
+├── server.go                    # Chi router setup, middleware, route registration
 ├── handlers/
-│   └── api_handlers.go    # request handlers (User)
+│   └── api_handlers.go          # HTTP handlers (User)
 ├── db/
-│   ├── db.go              # shared DB utilities
+│   ├── db.go                    # shared DB utilities (ObjectID helper)
+│   ├── sql.db.go                # PostgreSQL connection pool setup (scaffolded)
 │   └── collections/
-│       └── user.go        # UserStore interface + Mongo implementation
+│       └── user.go              # UserStore interface + MongoUserStore implementation
+├── internals/
+│   └── configs/
+│       └── config.go            # Config struct + LoadConfig() via cleanenv
 ├── types/
-│   └── user.go            # domain models
-├── makefile               # build/run/test shortcuts
+│   └── user.go                  # Domain models (User)
+├── config/
+│   └── config.env               # Environment variables file
+├── makefile                     # build / run / test shortcuts
 ├── go.mod
 └── go.sum
 ```
@@ -30,16 +43,16 @@ A hotel reservation API built with Go, Chi, Fiber and MongoDB, Postgresql .
 
 All endpoints are prefixed with `/api/v1`.
 
-| Method | Endpoint      | Description          |
-| ------ | ------------- | -------------------- |
-| GET    | `/users`      | List all users       |
-| GET    | `/user/:id`   | Get a user by ID     |
+| Method | Endpoint        | Description      |
+| ------ | --------------- | ---------------- |
+| GET    | `/api/v1/users`     | List all users   |
+| GET    | `/api/v1/users/{id}` | Get user by ID   |
 
 ### Response Format
 
 **Success** — returns JSON body directly.
 
-**Error** — returns a structured error:
+**Error** — returns a structured error envelope:
 
 ```json
 {
@@ -48,16 +61,48 @@ All endpoints are prefixed with `/api/v1`.
 }
 ```
 
+Unmatched routes return a `404` with the same envelope.
+
 ## Architecture
 
-The codebase follows a clean separation of concerns:
+The project follows a clean layered architecture:
 
 - **`types`** — Plain domain structs with BSON/JSON tags. No logic, no dependencies.
-- **`db/collections`** — Data access layer. Defines a `UserStore` interface and its MongoDB implementation (`MongoUserStore`). All database queries live here.
-- **`handlers`** — HTTP handlers. Accept a store interface via constructor injection. No direct database access.
-- **`server.go`** — Wires everything together: connects to Mongo, initializes stores and handlers, registers routes, starts the server.
+- **`db/collections`** — Data access layer. Defines the `UserStore` interface and its concrete `MongoUserStore` implementation. All MongoDB queries live here.
+- **`handlers`** — HTTP handlers. Receive a `UserStore` via constructor injection; no direct DB access.
+- **`server.go`** — Wires everything together: connects to MongoDB, initializes stores & handlers, registers Chi routes with middleware.
+- **`cmd/api/main.go`** — Application entrypoint. Loads config, starts the HTTP server in a goroutine, and handles graceful shutdown on `SIGINT`/`SIGTERM` with a 10 s drain timeout.
+- **`internals/configs`** — Centralised config loading. Reads from a `.env` file (path resolved via `-config` flag → `CONFIG_PATH` env var → `config/dev.env` fallback) using `cleanenv`.
+- **`db/sql.db.go`** — PostgreSQL connection pool scaffolding (connection limits, lifetime, WAL pragmas). Wired but not yet integrated into request handlers.
 
-Handlers depend on the `UserStore` interface, not the concrete Mongo implementation. This makes testing and swapping storage backends straightforward.
+Handlers depend on the `UserStore` **interface**, not the concrete Mongo type — swapping storage backends or writing unit tests requires no handler changes.
+
+## Configuration
+
+Config is loaded by `internals/configs.LoadConfig()` using the `cleanenv` library.
+
+| Environment Variable | Default                  | Description                        |
+| -------------------- | ------------------------ | ---------------------------------- |
+| `ENV`                | `dev`                    | Runtime environment                |
+| `HTTP_ADDRESS`       | `192.168.0.102:8080`     | Host and port the server binds to  |
+| `DB_PATH`            | `postgresql/dev`         | Path for the PostgreSQL data dir   |
+| `DB_NAME`            | `db.dev`                 | PostgreSQL database file name      |
+| `JWT_SECRET_KEY`     | `sha25612864321684210`   | Secret key for JWT signing         |
+
+Config file resolution order:
+1. `-config <path>` CLI flag
+2. `CONFIG_PATH` environment variable
+3. `config/dev.env` (default fallback)
+
+MongoDB URI is currently hardcoded in `server.go` to `mongodb://localhost:27017`, database `gotel-reservation`.
+
+## Chi Middleware
+
+The following middleware is applied globally on every request:
+
+- `middleware.RequestID` — attaches a unique request ID to every request
+- `middleware.Logger` — structured request logging
+- `middleware.Recoverer` — recovers from panics and returns a `500`
 
 ## Prerequisites
 
@@ -67,23 +112,16 @@ Handlers depend on the `UserStore` interface, not the concrete Mongo implementat
 ## Usage
 
 ```bash
-# build
+# build binary → bin/api
 make build
 
-# run (default :5000)
+# run the built binary
 make run
 
-# run on a custom port
-./bin/api -listenAddr :8080
+# run with a custom config file
+./bin/api -config config/config.env
 
-# test
+# run all tests
 make test
 ```
 
-## Configuration
-
-| Flag           | Default  | Description              |
-| -------------- | -------- | ------------------------ |
-| `-listenAddr`  | `:5000`  | Address the server binds to |
-
-MongoDB connection URI is currently hardcoded to `mongodb://localhost:27017`. Database name is `gotel-reservation`.
