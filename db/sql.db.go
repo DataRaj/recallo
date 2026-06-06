@@ -29,8 +29,17 @@ func initDB(DBName string, DBPath string) {
 		log.Fatalf("Error occur while pinging the database: %x", err)
 	}
 
+	// SetMaxIdleConns sets the maximum number of connections in the idle
+	// connection pool.
 	db.SetMaxIdleConns(25)
+
+	// SetMaxOpenConns sets the maximum number of open connections to the database.
+	// Setting this to a reasonable number prevents overwhelming your database.
 	db.SetMaxOpenConns(25)
+
+	// SetConnMaxLifetime sets the maximum amount of time a connection may be reused.
+	// This is useful for environments with proxies or load balancers that
+	// close connections after a certain period
 	db.SetConnMaxLifetime(5 * time.Second)
 
 	pragmas := []string{
