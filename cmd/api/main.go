@@ -9,45 +9,51 @@ import (
 	"syscall"
 	"time"
 
+	"gotel/db"
 	"gotel/internals/configs"
 )
 
 func main() {
 	cfg := configs.LoadConfig()
+
+	// Initialize PostgreSQL connection pool.
+	if err := db.InitDB(cfg.DatabaseURL, db.DefaultConfig()); err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+	defer db.CloseDBConnection()
+
 	mux := http.NewServeMux()
 
-	port := cfg.HTTPServer
+	// TODO: Register your routes here.
+	// example: mux.Handle("/api/v1/", handlers.NewRouter(db.GetDB()))
+
 	server := &http.Server{
-		Addr:    port.Address,
-		Handler: mux,
+		Addr:         cfg.HTTPServer.Address,
+		Handler:      mux,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	shutdownCh := make(chan os.Signal, 1)
 	signal.Notify(shutdownCh, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		log.Printf("%s ... server is running", port.Address)
-		err := server.ListenAndServe()
-
-		if err != nil && err != http.ErrServerClosed {
+		log.Printf("Server is running on %s [env=%s]", cfg.HTTPServer.Address, cfg.Env)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Failed to start server: %v", err)
 		}
 	}()
 
 	sig := <-shutdownCh
-
-	log.Fatalf("Shutdown signal recieved: %v", sig)
+	log.Printf("Shutdown signal received: %v — initiating graceful shutdown", sig)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	err := server.Shutdown(ctx)
-
-	if err != nil {
-		log.Printf("Server Shutdown Failed: %v", err)
+	if err := server.Shutdown(ctx); err != nil {
+		log.Printf("Server shutdown error: %v", err)
 	} else {
-		log.Println("Server has Shutdown successfully")
+		log.Println("Server shut down cleanly")
 	}
-
-	log.Println("server exited cleanly without any interruption!")
 }
