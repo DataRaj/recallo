@@ -11,6 +11,8 @@ import (
 
 	"gotel/db"
 	"gotel/internals/configs"
+	"gotel/internals/middleware"
+	"gotel/internals/routes"
 )
 
 func main() {
@@ -22,14 +24,20 @@ func main() {
 	}
 	defer db.CloseDBConnection()
 
-	mux := http.NewServeMux()
+	// mux := http.NewServeMux()
+	//
+
+	mux := routes.RegisterRoutes()
+
+	// Wrap the mux with the logging middleware
+	handler := middleware.Loggingmiddleware(mux)
 
 	// TODO: Register your routes here.
 	// example: mux.Handle("/api/v1/", handlers.NewRouter(db.GetDB()))
 
 	server := &http.Server{
 		Addr:         cfg.HTTPServer.Address,
-		Handler:      mux,
+		Handler:      handler,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,
