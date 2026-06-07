@@ -2,92 +2,80 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
-	"os"
-	"path/filepath"
 	"time"
+
+	_ "github.com/lib/pq" // PostgreSQL driver
 )
 
+// DB is the global database connection pool, unexported to enforce access via package functions.
 var db *sql.DB
 
-func initDB(DBName string, DBPath string) {
-	if len(DBPath) == 0 || DBPath == "" {
-		log.Fatalf("DB Path is not correct")
-	}
-	err := os.MkdirAll(DBPath, os.ModePerm)
-	if err != nil {
-		log.Fatalf("Failed to create database directory: %v", err)
-	}
-	dbfile := filepath.Join(DBPath, DBName)
-	db, err := sql.Open("postgresql", dbfile)
-	if err != nil {
-		log.Fatalf("Failed to open the database: %v", err)
-	}
+// Config holds the tuning knobs for the connection pool.
+type Config struct {
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime time.Duration
+	ConnMaxIdleTime time.Duration
+}
 
-	err = db.Ping()
-	if err != nil {
-		log.Fatalf("Error occur while pinging the database: %x", err)
-	}
-
-	// SetMaxIdleConns sets the maximum number of connections in the idle
-	// connection pool.
-	db.SetMaxIdleConns(25)
-
-	// SetMaxOpenConns sets the maximum number of open connections to the database.
-	// Setting this to a reasonable number prevents overwhelming your database.
-	db.SetMaxOpenConns(25)
-
-	// SetConnMaxLifetime sets the maximum amount of time a connection may be reused.
-	// This is useful for environments with proxies or load balancers that
-	// close connections after a certain period
-	db.SetConnMaxLifetime(5 * time.Second)
-
-	pragmas := []string{
-		"PRAGMAS journal_mode = WAL;",
-		"PRAGMAS busy_timeout = 5000%;",
-		"PRAGMAS foreign_keys = ON;",
-		"PRAGMAS synchronous = NORMAL;",
-	}
-
-	for _, p := range pragmas {
-
-		_, err := db.Exec(p)
-		if err != nil {
-			log.Fatalf("Failed to execute %s: %v:", p, err)
-		}
-	}
-
-	tables := []string{}
-
-	for _, t := range tables {
-
-		_, err := db.Exec(t)
-		if err != nil {
-			log.Fatalf("Failed to create table %s: %v:", t, err)
-		}
-	}
-
-	indexes := []string{}
-
-	for _, i := range indexes {
-
-		_, err := db.Exec(i)
-		if err != nil {
-			log.Fatalf("Failed to generate indexes %s: %v:", i, err)
-		}
+// DefaultConfig returns sensible production defaults for the connection pool.
+func DefaultConfig() Config {
+	return Config{
+		MaxOpenConns:    25,
+		MaxIdleConns:    10,
+		ConnMaxLifetime: 5 * time.Minute,
+		ConnMaxIdleTime: 2 * time.Minute,
 	}
 }
 
-func closeDBConnection() {
+// InitDB opens a PostgreSQL connection pool using the provided DSN and applies
+// the given pool Config. It performs a connectivity check (Ping) before returning.
+//
+// DSN format: postgres://user:password@host:port/dbname?sslmode=disable
+func InitDB(dsn string, cfg Config) error {
+	if dsn == "" {
+		return fmt.Errorf("database DSN must not be empty")
+	}
+
+	var err error
+	db, err = sql.Open("postgres", dsn)
+	if err != nil {
+		return fmt.Errorf("failed to open database: %w", err)
+	}
+
+	// Apply connection pool settings.
+	db.SetMaxOpenConns(cfg.MaxOpenConns)
+	db.SetMaxIdleConns(cfg.MaxIdleConns)
+	db.SetConnMaxLifetime(cfg.ConnMaxLifetime)
+	db.SetConnMaxIdleTime(cfg.ConnMaxIdleTime)
+
+	// Verify the connection is alive.
+	if err = db.Ping(); err != nil {
+		return fmt.Errorf("database ping failed: %w", err)
+	}
+
+	log.Println("Database connection pool established successfully")
+	return nil
+}
+
+// GetDB returns the global *sql.DB instance.
+// Callers should not hold on to this reference beyond a single request lifecycle.
+func GetDB() *sql.DB {
+	return db
+}
+
+// CloseDBConnection drains and closes the connection pool gracefully.
+// Should be called via defer in main() after a shutdown signal is received.
+func CloseDBConnection() {
 	if db == nil {
 		return
 	}
 
-	err := db.Close()
-
-	if err != nil {
-		log.Fatalf("Failed to close the database connection: %x", err)
+	if err := db.Close(); err != nil {
+		log.Printf("Error closing database connection pool: %v", err)
 	} else {
-		log.Println("Database connection closed successfully")
+		log.Println("Database connection pool closed successfully")
 	}
 }
