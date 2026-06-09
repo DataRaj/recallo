@@ -43,10 +43,9 @@ func GenerateJwtToken(id int64, name, platform string) (string, error) {
 
 func VerifyJWT(tokenStr string) (int64, string, string, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, CustomClaims{}, func(w *jwt.Token) (any, error) {
-		// 1. Perform a type assertion to check if the method is an HMAC pointer
 		_, ok := w.Method.(*jwt.SigningMethodHMAC)
 		if !ok {
-			return nil, errors.New("unexpected signing method!")
+			return nil, errors.New("unexpected signin method!")
 		}
 		return jwtKey, nil
 	})
@@ -55,7 +54,7 @@ func VerifyJWT(tokenStr string) (int64, string, string, error) {
 	}
 
 	if !token.Valid {
-		return 0, "", "", fmt.Errorf("invalid token")
+		return 0, "", "", fmt.Errorf("invalid toekn")
 	}
 	claims, ok := token.Claims.(*CustomClaims)
 
