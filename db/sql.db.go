@@ -73,44 +73,43 @@ func InitDB(dsn string, cfg Config) error {
 	tables := []string{
 		// Users
 		`CREATE TABLE IF NOT EXISTS users (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name TEXT NOT NULL,
-			email TEXT NOT NULL UNIQUE,
-			password TEXT NOT NULL,
-			refresh_token_web TEXT,
-  			refresh_token_web_at DATETIME,
-  			refresh_token_mobile TEXT,
-  			refresh_token_mobile_at DATETIME,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		);`,
+        id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL UNIQUE,
+        password TEXT NOT NULL,
+        refresh_token_web TEXT,
+        refresh_token_web_at TIMESTAMP,
+        refresh_token_mobile TEXT,
+        refresh_token_mobile_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );`,
 
 		// Privates
 		`CREATE TABLE IF NOT EXISTS privates (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			user1_id INTEGER NOT NULL,
-			user2_id INTEGER NOT NULL,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			UNIQUE(user1_id, user2_id),
-			CHECK(user1_id < user2_id),
-			FOREIGN KEY(user1_id) REFERENCES users(id) ON DELETE CASCADE,
-			FOREIGN KEY(user2_id) REFERENCES users(id) ON DELETE CASCADE
-		);`,
+       id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        user1_id INTEGER NOT NULL,
+        user2_id INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user1_id, user2_id),
+        CHECK(user1_id < user2_id),
+        FOREIGN KEY(user1_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY(user2_id) REFERENCES users(id) ON DELETE CASCADE
+    );`,
 
 		// Messages
 		`CREATE TABLE IF NOT EXISTS messages (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			from_id INTEGER NOT NULL,
-			private_id INTEGER,
-			message_type TEXT NOT NULL,
-			content TEXT NOT NULL,
-			delivered INTEGER NOT NULL DEFAULT 0,
-			read INTEGER NOT NULL DEFAULT 0,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY(from_id) REFERENCES users(id) ON DELETE CASCADE,
-			FOREIGN KEY(private_id) REFERENCES privates(id) ON DELETE CASCADE
-		);`,
+        id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+		from_id INTEGER NOT NULL,
+        private_id INTEGER,
+        message_type TEXT NOT NULL,
+        content TEXT NOT NULL,
+        delivered INTEGER NOT NULL DEFAULT 0, -- Keeps 0/1 integers or you could switch to BOOLEAN DEFAULT FALSE
+        read INTEGER NOT NULL DEFAULT 0,      -- Keeps 0/1 integers or you could switch to BOOLEAN DEFAULT FALSE
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(from_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY(private_id) REFERENCES privates(id) ON DELETE CASCADE
+    );`,
 	}
-
 	for _, table := range tables {
 		_, err := db.Exec(table)
 		if err != nil {
