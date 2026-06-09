@@ -10,7 +10,7 @@ import (
 )
 
 // DB is the global database connection pool, unexported to enforce access via package functions.
-var db *sql.DB
+var DB *sql.DB
 
 // Config holds the tuning knobs for the connection pool.
 type Config struct {
@@ -40,7 +40,7 @@ func InitDB(dsn string, cfg Config) error {
 	}
 
 	var err error
-	db, err = sql.Open("postgres", dsn)
+	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
@@ -56,6 +56,86 @@ func InitDB(dsn string, cfg Config) error {
 		return fmt.Errorf("database ping failed: %w", err)
 	}
 
+	pragmas := []string{
+		"SET synchronous_commit = 'local';",
+		"SET lock_timeout = 5000;",
+		"SET statement_timeout = 10000;", // "PRAGMA temp_store=MEMORY;",
+	}
+
+	for _, pragma := range pragmas {
+		_, err := db.Exec(pragma)
+		if err != nil {
+			_ = db.Close()
+			return fmt.Errorf("failed to set pragma '%s': %w", pragma, err)
+		}
+	}
+
+	tables := []string{
+		// Users
+		`CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			email TEXT NOT NULL UNIQUE,
+			password TEXT NOT NULL,
+			refresh_token_web TEXT,
+  			refresh_token_web_at DATETIME,
+  			refresh_token_mobile TEXT,
+  			refresh_token_mobile_at DATETIME,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);`,
+
+		// Privates
+		`CREATE TABLE IF NOT EXISTS privates (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user1_id INTEGER NOT NULL,
+			user2_id INTEGER NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(user1_id, user2_id),
+			CHECK(user1_id < user2_id),
+			FOREIGN KEY(user1_id) REFERENCES users(id) ON DELETE CASCADE,
+			FOREIGN KEY(user2_id) REFERENCES users(id) ON DELETE CASCADE
+		);`,
+
+		// Messages
+		`CREATE TABLE IF NOT EXISTS messages (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			from_id INTEGER NOT NULL,
+			private_id INTEGER,
+			message_type TEXT NOT NULL,
+			content TEXT NOT NULL,
+			delivered INTEGER NOT NULL DEFAULT 0,
+			read INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY(from_id) REFERENCES users(id) ON DELETE CASCADE,
+			FOREIGN KEY(private_id) REFERENCES privates(id) ON DELETE CASCADE
+		);`,
+	}
+
+	for _, table := range tables {
+		_, err := db.Exec(table)
+		if err != nil {
+			_ = db.Close()
+			return fmt.Errorf("failed to create table: %w", err)
+		}
+	}
+
+	indexes := []string{
+		`CREATE INDEX IF NOT EXISTS idx_messages_private_id ON messages(private_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_messages_from_id ON messages(from_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);`,
+		`CREATE INDEX IF NOT EXISTS idx_privates_user1_id ON privates(user1_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_privates_user2_id ON privates(user2_id);`,
+	}
+	for _, index := range indexes {
+		_, err := db.Exec(index)
+		if err != nil {
+			_ = db.Close()
+			return fmt.Errorf("failed to create index: %w", err)
+		}
+	}
+
+	DB = db
+
 	log.Println("Database connection pool established successfully")
 	return nil
 }
@@ -63,17 +143,17 @@ func InitDB(dsn string, cfg Config) error {
 // GetDB returns the global *sql.DB instance.
 // Callers should not hold on to this reference beyond a single request lifecycle.
 func GetDB() *sql.DB {
-	return db
+	return DB
 }
 
 // CloseDBConnection drains and closes the connection pool gracefully.
 // Should be called via defer in main() after a shutdown signal is received.
 func CloseDBConnection() {
-	if db == nil {
+	if DB == nil {
 		return
 	}
 
-	if err := db.Close(); err != nil {
+	if err := DB.Close(); err != nil {
 		log.Printf("Error closing database connection pool: %v", err)
 	} else {
 		log.Println("Database connection pool closed successfully")
