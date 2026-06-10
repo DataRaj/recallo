@@ -141,8 +141,8 @@ func InitDB(dsn string, cfg Config) error {
 
 // GetDB returns the global *sql.DB instance.
 // Callers should not hold on to this reference beyond a single request lifecycle.
-func GetDB() *sql.DB {
-	return DB
+func GetDB() (*sql.DB, error) {
+	return DB, nil
 }
 
 // CloseDBConnection drains and closes the connection pool gracefully.
