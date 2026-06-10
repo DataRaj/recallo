@@ -48,6 +48,8 @@ func main() {
 
 	go func() {
 		log.Printf("Server is running on %s [env=%s]", cfg.HTTPServer.Address, cfg.Env)
+		log.Println("  [POST] /api/v1/auth/register — user registration")
+		log.Println("  [POST] /api/v1/auth/login    — user login")
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Failed to start server: %v", err)
 		}

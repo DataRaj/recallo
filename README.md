@@ -1,16 +1,18 @@
 # gotel-reserves
 
-A hotel reservation API built with Go, using **chi** for routing, **MongoDB** as the primary database, and a **PostgreSQL** layer scaffolded for future expansion.
+A hotel reservation API built with Go, using **chi** for routing and **PostgreSQL** as the primary database. Includes JWT-based authentication, a custom middleware stack, and auto-migrated schema on startup.
 
 ## Tech Stack
 
-| Layer        | Technology                                  |
-| ------------ | ------------------------------------------- |
-| Language     | Go 1.26                                     |
-| HTTP Router  | `go-chi/chi` v5 (idiomatic `net/http`)      |
-| Primary DB   | MongoDB v2 Driver                           |
-| Secondary DB | PostgreSQL (scaffolded via `database/sql`)  |
-| Config       | `cleanenv` + `.env` file                    |
+| Layer        | Technology                                         |
+| ------------ | -------------------------------------------------- |
+| Language     | Go 1.26                                            |
+| HTTP Router  | `go-chi/chi` v5 (idiomatic `net/http`)             |
+| Primary DB   | PostgreSQL via `database/sql` + `lib/pq` driver    |
+| Auth         | JWT (`golang-jwt/jwt` v5) + bcrypt password hashing |
+| Config       | `cleanenv` + `.env` file                           |
+
+> **Note:** MongoDB integration (`db/collections/`) is still present in the codebase for historical reference but is no longer wired into the active request path. PostgreSQL is the sole operational database.
 
 ## Project Structure
 
@@ -18,87 +20,215 @@ A hotel reservation API built with Go, using **chi** for routing, **MongoDB** as
 .
 ├── cmd/
 │   └── api/
-│       └── main.go              # entrypoint — server bootstrap & graceful shutdown
-├── server.go                    # Chi router setup, middleware, route registration
-├── handlers/
-│   └── api_handlers.go          # HTTP handlers (User)
+│       └── main.go                  # Entrypoint — config, DB init, middleware, graceful shutdown
 ├── db/
-│   ├── db.go                    # shared DB utilities (ObjectID helper)
-│   ├── sql.db.go                # PostgreSQL connection pool setup (scaffolded)
+│   ├── db.go                        # Shared DB utilities
+│   ├── sql.db.go                    # PostgreSQL pool init, schema migration, indexes
 │   └── collections/
-│       └── user.go              # UserStore interface + MongoUserStore implementation
+│       └── user.go                  # MongoUserStore (legacy, not active)
 ├── internals/
-│   └── configs/
-│       └── config.go            # Config struct + LoadConfig() via cleanenv
+│   ├── configs/
+│   │   └── config.go                # Config struct + LoadConfig() via cleanenv
+│   ├── handlers/
+│   │   └── login.go                 # POST /api/v1/auth/login handler
+│   ├── middleware/
+│   │   ├── authentication.go        # JWT AuthenticateMiddleware (Bearer token validation)
+│   │   ├── cors.go                  # CORS middleware
+│   │   └── muxlogger.go             # Request logger middleware
+│   ├── models/
+│   │   └── user.go                  # User struct + GetUserByEmail / CreateUser (PostgreSQL)
+│   ├── routes/
+│   │   ├── routes.go                # Route registration (ServeMux)
+│   │   ├── healthcheck.go           # GET /api/v1/healthcheck handler
+│   │   └── user-register.go         # POST /api/v1/auth/register handler
+│   ├── utils/
+│   │   ├── api-response.go          # JSON response helper
+│   │   ├── hash.go                  # bcrypt password hashing
+│   │   ├── jwt.go                   # JWT generation & verification
+│   │   └── refresh-token.go         # Refresh token utilities
+│   ├── lib/
+│   │   └── pq.driver.go             # Low-level pq error handling helpers
+│   └── realtime/                    # (reserved for WebSocket / SSE work)
 ├── types/
-│   └── user.go                  # Domain models (User)
+│   └── user.go                      # Legacy domain model (MongoDB BSON, not active)
+├── postgresql/
+│   └── dev/                         # Local PostgreSQL data directory
 ├── config/
-│   └── config.env               # Environment variables file
-├── makefile                     # build / run / test shortcuts
+│   └── config.env                   # Environment variables (git-ignored)
+├── env.example                      # Environment variable template
+├── makefile                         # build / run / test shortcuts
 ├── go.mod
 └── go.sum
 ```
 
 ## API
 
-All endpoints are prefixed with `/api/v1`.
+### Public Endpoints
 
-| Method | Endpoint        | Description      |
-| ------ | --------------- | ---------------- |
-| GET    | `/api/v1/users`     | List all users   |
-| GET    | `/api/v1/users/{id}` | Get user by ID   |
+| Method | Endpoint                  | Description              |
+| ------ | ------------------------- | ------------------------ |
+| GET    | `/api/v1/healthcheck`     | Server health check      |
+| POST   | `/api/v1/auth/register`   | Register a new user      |
+| POST   | `/api/v1/auth/login`      | Login and obtain tokens  |
 
-### Response Format
+### Protected Endpoints *(require `Authorization: Bearer <token>` header)*
 
-**Success** — returns JSON body directly.
+> Protected routes are gated by `AuthenticateMiddleware`. No protected routes are registered yet — the middleware is wired and ready.
 
-**Error** — returns a structured error envelope:
+### Request — Register User
 
+```http
+POST /api/v1/auth/register
+Content-Type: application/json
+```
 ```json
 {
-  "success": false,
-  "message": "error description"
+  "name": "John Doe",
+  "email": "john@example.com",
+  "password": "s3cr3t"
 }
 ```
 
-Unmatched routes return a `404` with the same envelope.
+### Request — Login
+
+Requires the `X-Platform` header set to `web` or `mobile`.
+
+```http
+POST /api/v1/auth/login
+Content-Type: application/json
+X-Platform: web
+```
+```json
+{
+  "email": "john@example.com",
+  "password": "s3cr3t"
+}
+```
+
+### Response Format
+
+**Register success:**
+```json
+{
+  "success": true,
+  "message": "User has been created successfully",
+  "data": null
+}
+```
+
+**Login success:**
+```json
+{
+  "success": true,
+  "message": "login successful",
+  "data": {
+    "user": { "id": 1, "name": "John Doe", "email": "john@example.com" },
+    "access_token": "<jwt>",
+    "refresh_token": "<opaque-token>"
+  }
+}
+```
+
+**Error (any endpoint):**
+```json
+{
+  "success": false,
+  "message": "error description",
+  "data": null
+}
+```
+
+Unmatched routes return a `404` with the error envelope above.
 
 ## Architecture
 
 The project follows a clean layered architecture:
 
-- **`types`** — Plain domain structs with BSON/JSON tags. No logic, no dependencies.
-- **`db/collections`** — Data access layer. Defines the `UserStore` interface and its concrete `MongoUserStore` implementation. All MongoDB queries live here.
-- **`handlers`** — HTTP handlers. Receive a `UserStore` via constructor injection; no direct DB access.
-- **`server.go`** — Wires everything together: connects to MongoDB, initializes stores & handlers, registers Chi routes with middleware.
-- **`cmd/api/main.go`** — Application entrypoint. Loads config, starts the HTTP server in a goroutine, and handles graceful shutdown on `SIGINT`/`SIGTERM` with a 10 s drain timeout.
-- **`internals/configs`** — Centralised config loading. Reads from a `.env` file (path resolved via `-config` flag → `CONFIG_PATH` env var → `config/dev.env` fallback) using `cleanenv`.
-- **`db/sql.db.go`** — PostgreSQL connection pool scaffolding (connection limits, lifetime, WAL pragmas). Wired but not yet integrated into request handlers.
+- **`internals/configs`** — Centralised config loading via `cleanenv`. Reads from a `.env` file resolved by `-config` flag → `CONFIG_PATH` env var → `config/dev.env` fallback.
+- **`db/sql.db.go`** — PostgreSQL connection pool with tunable limits. On `InitDB()`, automatically creates and migrates all tables (`users`, `privates`, `messages`) and their indexes — no separate migration tool required.
+- **`internals/models`** — Data access layer backed by PostgreSQL. `GetUserByEmail` and `CreateUser` query the global `db.DB` pool directly.
+- **`internals/routes`** — HTTP handlers registered on a `net/http.ServeMux`. Handlers call model functions and use `utils.JSON` for uniform responses.
+- **`internals/middleware`** — Reusable middleware chain:
+  - `AuthenticateMiddleware` — validates `Bearer` JWT tokens, extracts `userId`, `name`, and `X-Platform` claims into request context.
+  - `cors.go` — cross-origin request handling.
+  - `muxlogger.go` — structured request logging.
+- **`internals/utils`** — Utility functions: uniform JSON responses, bcrypt hashing, JWT sign/verify, refresh token helpers.
+- **`cmd/api/main.go`** — Application entrypoint. Loads config, initialises the PostgreSQL pool, wraps the `ServeMux` from `internals/routes` with logging middleware, and runs the HTTP server with graceful shutdown.
+- **`internals/handlers`** — Feature-level HTTP handlers living outside the routes package. `login.go` validates credentials, issues a JWT access token and an opaque refresh token, and persists the refresh token to the database.
 
-Handlers depend on the `UserStore` **interface**, not the concrete Mongo type — swapping storage backends or writing unit tests requires no handler changes.
+## Database Schema
+
+Tables are auto-created at startup by `db.InitDB()`.
+
+### `users`
+| Column                      | Type      | Notes                  |
+| --------------------------- | --------- | ---------------------- |
+| `id`                        | INTEGER   | PK, identity           |
+| `name`                      | TEXT      | NOT NULL               |
+| `email`                     | TEXT      | NOT NULL, UNIQUE       |
+| `password`                  | TEXT      | bcrypt hash, NOT NULL  |
+| `refresh_token_web`         | TEXT      |                        |
+| `refresh_token_web_at`      | TIMESTAMP |                        |
+| `refresh_token_mobile`      | TEXT      |                        |
+| `refresh_token_mobile_at`   | TIMESTAMP |                        |
+| `created_at`                | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP |
+
+### `privates` (private conversations)
+| Column       | Type      | Notes                            |
+| ------------ | --------- | -------------------------------- |
+| `id`         | INTEGER   | PK, identity                     |
+| `user1_id`   | INTEGER   | FK → users, user1_id < user2_id  |
+| `user2_id`   | INTEGER   | FK → users                       |
+| `created_at` | TIMESTAMP |                                  |
+
+### `messages`
+| Column         | Type      | Notes                              |
+| -------------- | --------- | ---------------------------------- |
+| `id`           | INTEGER   | PK, identity                       |
+| `from_id`      | INTEGER   | FK → users                         |
+| `private_id`   | INTEGER   | FK → privates                      |
+| `message_type` | TEXT      | NOT NULL                           |
+| `content`      | TEXT      | NOT NULL                           |
+| `delivered`    | INTEGER   | 0/1 flag, DEFAULT 0                |
+| `read`         | INTEGER   | 0/1 flag, DEFAULT 0                |
+| `created_at`   | TIMESTAMP |                                    |
+
+## Authentication
+
+JWT tokens are signed with `HS256` and expire after **30 minutes**.
+
+Token claims include:
+- `user_id` — database user ID
+- `name` — display name
+- `X-Platform` — `"web"` or `"mobile"`
+
+The `X-Platform` header (or token claim) must match on every protected request. Mismatches are rejected with `401 Unauthorized`.
 
 ## Configuration
 
-Config is loaded by `internals/configs.LoadConfig()` using the `cleanenv` library.
+Config is loaded by `internals/configs.LoadConfig()` using `cleanenv`.
 
-| Environment Variable | Default                  | Description                        |
-| -------------------- | ------------------------ | ---------------------------------- |
-| `ENV`                | `dev`                    | Runtime environment                |
-| `HTTP_ADDRESS`       | `192.168.0.102:8080`     | Host and port the server binds to  |
-| `DB_PATH`            | `postgresql/dev`         | Path for the PostgreSQL data dir   |
-| `DB_NAME`            | `db.dev`                 | PostgreSQL database file name      |
-| `JWT_SECRET_KEY`     | `sha25612864321684210`   | Secret key for JWT signing         |
+| Environment Variable | Default                                                         | Description                        |
+| -------------------- | --------------------------------------------------------------- | ---------------------------------- |
+| `ENV`                | `dev`                                                           | Runtime environment                |
+| `HTTP_ADDRESS`       | `0.0.0.0:8080`                                                  | Host and port the server binds to  |
+| `DATABASE_URL`       | `postgres://postgres:password@localhost:5432/gotel?sslmode=disable` | PostgreSQL connection DSN      |
+| `JWT_SECRET_KEY`     | *(required, no default)*                                        | Secret key for JWT signing         |
+
+Copy `env.example` to `config/dev.env` and fill in your values:
+
+```bash
+cp env.example config/dev.env
+```
 
 Config file resolution order:
 1. `-config <path>` CLI flag
 2. `CONFIG_PATH` environment variable
 3. `config/dev.env` (default fallback)
 
-MongoDB URI is currently hardcoded in `server.go` to `mongodb://localhost:27017`, database `gotel-reservation`.
-
 ## Chi Middleware
 
-The following middleware is applied globally on every request:
+The following middleware is applied globally on every request via the Chi router:
 
 - `middleware.RequestID` — attaches a unique request ID to every request
 - `middleware.Logger` — structured request logging
@@ -107,21 +237,26 @@ The following middleware is applied globally on every request:
 ## Prerequisites
 
 - Go 1.26+
-- MongoDB running on `localhost:27017`
+- PostgreSQL running and accessible via `DATABASE_URL`
 
 ## Usage
 
 ```bash
+# copy and configure environment
+cp env.example config/dev.env
+
 # build binary → bin/api
 make build
 
-# run the built binary
+# run the built binary (reads config/dev.env by default)
 make run
 
 # run with a custom config file
 ./bin/api -config config/config.env
 
+# run with a custom listen address
+./bin/api -listenAddr :9000
+
 # run all tests
 make test
 ```
-
