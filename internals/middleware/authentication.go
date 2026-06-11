@@ -13,8 +13,6 @@ const (
 	CtxUserDisplayName string = "name"
 	CtxPlatform        string = "X-Platform"
 	CtxAuthorization   string = "Authorization"
-	PlatformWeb               = "web"
-	PlatformMobile            = "mobile"
 )
 
 func AuthenticateMiddleware(next http.Handler) http.Handler {
@@ -38,7 +36,7 @@ func AuthenticateMiddleware(next http.Handler) http.Handler {
 			platform = tokenPlatform
 		}
 
-		if platform != PlatformWeb && platform != PlatformMobile {
+		if platform != utils.PlatformWeb && platform != utils.PlatformMobile {
 			utils.JSON(w, http.StatusBadRequest, false, "Invalid platform", nil)
 			return
 		}

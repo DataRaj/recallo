@@ -17,7 +17,7 @@ type EmailLoginRequest struct {
 
 func HandleEmailLogin(w http.ResponseWriter, r *http.Request) {
 	platform := strings.ToLower(strings.TrimSpace(r.Header.Get(middleware.CtxPlatform)))
-	if platform != middleware.PlatformWeb && platform != middleware.PlatformMobile {
+	if platform != utils.PlatformWeb && platform != utils.PlatformMobile {
 		utils.JSON(w, http.StatusBadRequest, false, "Invalid platform", nil)
 		return
 	}
@@ -70,4 +70,28 @@ func HandleEmailLogin(w http.ResponseWriter, r *http.Request) {
 		"access_token":  accessToken,
 		"refresh_token": refreshToken,
 	})
+}
+
+func HandleLogout(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(middleware.CtxUserID).(int64)
+
+	if !ok {
+		utils.JSON(w, http.StatusUnauthorized, false, "Unauthorized user", nil)
+		return
+	}
+
+	platform, ok := r.Context().Value(middleware.CtxPlatform).(string)
+
+	if !ok {
+		utils.JSON(w, http.StatusBadRequest, false, "Invalid platform", nil)
+		return
+	}
+
+	err := utils.DeleteUserRefreshToken(userID, platform)
+	if err != nil {
+		utils.JSON(w, http.StatusInternalServerError, false, "Something went wrong please retry", nil)
+		return
+	}
+
+	utils.JSON(w, http.StatusOK, true, "User logged out successfully", nil)
 }

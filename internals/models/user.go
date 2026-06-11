@@ -39,7 +39,6 @@ func GetUserByEmail(email string) (*User, error) {
 		FROM users
 		WHERE email = $1
 	`
-
 	err := db.DB.QueryRow(query, email).Scan(
 		&u.ID,
 		&u.Name,
