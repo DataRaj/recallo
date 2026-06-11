@@ -24,7 +24,7 @@ type CustomClaims struct {
 func GenerateJwtToken(id int64, name, platform string) (string, error) {
 	expDate := time.Now().Add(30 * time.Minute)
 
-	if platform != "web" && platform != "mobile" {
+	if platform != PlatformWeb && platform != PlatformMobile {
 		return "", errors.New("invalid platform for the token")
 	}
 	claims := &CustomClaims{
@@ -62,7 +62,7 @@ func VerifyJWT(tokenStr string) (int64, string, string, error) {
 		return 0, "", "", fmt.Errorf("invalid claims error %v", err)
 	}
 
-	if claims.UserID == 0 || claims.Name == "" || (claims.XPlatform != "web" && claims.XPlatform != "mobile") {
+	if claims.UserID == 0 || claims.Name == "" || (claims.XPlatform != PlatformWeb && claims.XPlatform != PlatformMobile) {
 		return 0, "", "", fmt.Errorf("missing or invalid user claims error %v", err)
 	}
 
