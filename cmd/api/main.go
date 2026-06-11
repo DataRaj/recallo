@@ -9,31 +9,30 @@ import (
 	"syscall"
 	"time"
 
-	"gotel/db"
-	"gotel/internals/configs"
-	"gotel/internals/middleware"
-	"gotel/internals/routes"
+	"recallo/db"
+	"recallo/internals/configs"
+	"recallo/internals/middleware"
+	"recallo/internals/routes"
+	"recallo/internals/utils"
 )
 
 func main() {
 	cfg := configs.LoadConfig()
 
-	// Initialize PostgreSQL connection pool.
+	// Initialise JWT signing key so all handlers can sign/verify tokens.
+	utils.InitJWT(cfg.JWTSecretKey)
+
+	// Initialise PostgreSQL connection pool and run schema migrations.
 	if err := db.InitDB(cfg.DatabaseURL, db.DefaultConfig()); err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
+		log.Fatalf("[startup] failed to initialise database: %v", err)
 	}
 	defer db.CloseDBConnection()
 
-	// mux := http.NewServeMux()
-	//
+	// Build route handler (CORS already applied inside RegisterRoutes).
+	routeHandler := routes.RegisterRoutes()
 
-	mux := routes.RegisterRoutes()
-
-	// Wrap the mux with the logging middleware
-	handler := middleware.Loggingmiddleware(mux)
-
-	// TODO: Register your routes here.
-	// example: mux.Handle("/api/v1/", handlers.NewRouter(db.GetDB()))
+	// Apply logging middleware on top of the route handler.
+	handler := middleware.Loggingmiddleware(routeHandler)
 
 	server := &http.Server{
 		Addr:         cfg.HTTPServer.Address,
@@ -47,23 +46,26 @@ func main() {
 	signal.Notify(shutdownCh, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		log.Printf("Server is running on %s [env=%s]", cfg.HTTPServer.Address, cfg.Env)
-		log.Println("  [POST] /api/v1/auth/register — user registration")
-		log.Println("  [POST] /api/v1/auth/login    — user login")
+		log.Printf("[recallo] server starting on %s  [env=%s]", cfg.HTTPServer.Address, cfg.Env)
+		log.Println("  GET  /api/v1/healthcheck")
+		log.Println("  POST /api/v1/auth/register")
+		log.Println("  POST /api/v1/auth/login")
+		log.Println("  POST /api/v1/auth/refresh")
+		log.Println("  POST /api/v1/auth/logout   [protected]")
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Failed to start server: %v", err)
+			log.Fatalf("[recallo] server error: %v", err)
 		}
 	}()
 
 	sig := <-shutdownCh
-	log.Printf("Shutdown signal received: %v — initiating graceful shutdown", sig)
+	log.Printf("[recallo] signal received: %v — initiating graceful shutdown", sig)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		log.Printf("Server shutdown error: %v", err)
+		log.Printf("[recallo] shutdown error: %v", err)
 	} else {
-		log.Println("Server shut down cleanly")
+		log.Println("[recallo] server shut down cleanly")
 	}
 }

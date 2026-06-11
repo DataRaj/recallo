@@ -1,19 +1,20 @@
 # ── Secrets & Environment Files ──────────────────────────────────────────────
-# Ignore all .env files (e.g. config/dev.env, config/prod.env, .env)
+# Ignore ALL .env files everywhere
 *.env
 
 # Ignore the entire config/ directory (contains real secrets)
 config/
 
-# Keep the example template committed so others can onboard
+# Keep the example template so new contributors can onboard
 !env.example
 
 # ── Build Artifacts ───────────────────────────────────────────────────────────
-# Compiled binary (same name as the module)
+# Compiled binaries (old name + new name)
 gotel
+recallo
+bin/
 
 # ── Go ────────────────────────────────────────────────────────────────────────
-# Test cache and coverage output
 *.test
 *.out
 coverage.html

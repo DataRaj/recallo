@@ -3,7 +3,7 @@ package routes
 import (
 	"net/http"
 
-	"gotel/internals/utils"
+	"recallo/internals/utils"
 )
 
 func Healthcheck(w http.ResponseWriter, r *http.Request) {
