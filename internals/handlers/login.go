@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"strings"
 
-	"gotel/internals/middleware"
-	"gotel/internals/models"
-	"gotel/internals/utils"
+	"recallo/internals/middleware"
+	"recallo/internals/models"
+	"recallo/internals/utils"
 )
 
 type EmailLoginRequest struct {

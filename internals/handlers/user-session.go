@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"gotel/internals/middleware"
-	"gotel/internals/utils"
+	"recallo/internals/middleware"
+	"recallo/internals/utils"
 )
 
 type RefreshSessionRequest struct {

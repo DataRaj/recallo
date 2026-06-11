@@ -5,20 +5,21 @@ import (
 	"errors"
 	"time"
 
-	"gotel/db"
+	"recallo/db"
 )
 
 type User struct {
-	ID                          int64     `json:"id"`
-	Name                        string    `json:"name"`
-	Email                       string    `json:"email"`
-	Password                    string    `json:"-"`
-	RefreshTokenForWeb          string    `json:"-"`
-	RefreshTokenForWebUpdatedAt time.Time `json:"-"`
-	RefreshTokenForApp          string    `json:"-"`
-	RefreshTokenForAppUpdatedAt time.Time `json:"-"`
-	CreatedAt                   time.Time `json:"created_at"`
-	UpdatedAt                   time.Time `json:"updated_at"`
+	ID                            int64     `json:"id"`
+	Name                          string    `json:"name"`
+	Email                         string    `json:"email"`
+	Password                      string    `json:"-"`
+	AvatarURL                     string    `json:"avatar_url,omitempty"`
+	RefreshTokenForWeb            string    `json:"-"`
+	RefreshTokenForWebUpdatedAt   time.Time `json:"-"`
+	RefreshTokenForApp            string    `json:"-"`
+	RefreshTokenForAppUpdatedAt   time.Time `json:"-"`
+	CreatedAt                     time.Time `json:"created_at"`
+	UpdatedAt                     time.Time `json:"updated_at"`
 }
 
 func GetUserByEmail(email string) (*User, error) {
@@ -30,10 +31,11 @@ func GetUserByEmail(email string) (*User, error) {
 			name,
 			email,
 			password,
-			refresh_token_for_web,
-			refresh_token_for_web_updated_at,
-			refresh_token_for_app,
-			refresh_token_for_app_updated_at,
+			COALESCE(avatar_url, ''),
+			COALESCE(refresh_token_web, ''),
+			COALESCE(refresh_token_web_updated_at, '1970-01-01'),
+			COALESCE(refresh_token_mobile, ''),
+			COALESCE(refresh_token_mobile_updated_at, '1970-01-01'),
 			created_at,
 			updated_at
 		FROM users
@@ -44,6 +46,7 @@ func GetUserByEmail(email string) (*User, error) {
 		&u.Name,
 		&u.Email,
 		&u.Password,
+		&u.AvatarURL,
 		&u.RefreshTokenForWeb,
 		&u.RefreshTokenForWebUpdatedAt,
 		&u.RefreshTokenForApp,

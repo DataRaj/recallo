@@ -3,15 +3,25 @@ package routes
 import (
 	"net/http"
 
-	"gotel/internals/handlers"
+	"recallo/internals/handlers"
+	"recallo/internals/middleware"
 )
 
-func RegisterRoutes() *http.ServeMux {
+// RegisterRoutes builds and returns the root HTTP mux with all application
+// routes registered. The mux is already wrapped with CORS middleware here so
+// that every route benefits from it automatically.
+func RegisterRoutes() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/v1/healthcheck", Healthcheck)
 	mux.HandleFunc("POST /api/v1/auth/register", handleUserRegistration)
 	mux.HandleFunc("POST /api/v1/auth/login", handlers.HandleEmailLogin)
+	mux.HandleFunc("POST /api/v1/auth/refresh", handlers.HandleRefreshSession)
 
-	return mux
+	// ── Protected (require valid JWT) ─────────────────────────────────────────
+	mux.Handle("POST /api/v1/auth/logout",
+		middleware.AuthenticateMiddleware(http.HandlerFunc(handlers.HandleLogout)))
+
+	// Wrap entire mux with CORS so preflight OPTIONS requests are handled globally.
+	return middleware.CORSMiddleware(mux)
 }

@@ -6,21 +6,20 @@ import (
 	"errors"
 	"time"
 
-	"gotel/db"
-	"gotel/internals/models"
+	"recallo/db"
+	"recallo/internals/models"
 )
 
+// GenerateRefreshToken produces a cryptographically random URL-safe token.
 func GenerateRefreshToken() (string, error) {
 	b := make([]byte, 32)
-
-	_, err := rand.Read(b)
-	if err != nil {
+	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
-
 	return base64.URLEncoding.Strict().EncodeToString(b), nil
 }
 
+// UpdateRefreshToken persists a new refresh token for the given platform.
 func UpdateRefreshToken(userID int64, platform, refreshToken string) error {
 	db, err := db.GetDB()
 	if err != nil {
@@ -31,11 +30,15 @@ func UpdateRefreshToken(userID int64, platform, refreshToken string) error {
 
 	switch platform {
 	case PlatformWeb:
-		_, err = db.Exec("UPDATE users SET refresh_token_web = ?, refresh_token_web_at = ? WHERE id = ?", refreshToken, now, userID)
-
+		_, err = db.Exec(
+			`UPDATE users SET refresh_token_web = $1, refresh_token_web_updated_at = $2 WHERE id = $3`,
+			refreshToken, now, userID,
+		)
 	case PlatformMobile:
-		_, err = db.Exec("UPDATE users SET refresh_token_mobile = ?, refresh_token_mobile_at = ? WHERE id = ?", refreshToken, now, userID)
-
+		_, err = db.Exec(
+			`UPDATE users SET refresh_token_mobile = $1, refresh_token_mobile_updated_at = $2 WHERE id = $3`,
+			refreshToken, now, userID,
+		)
 	default:
 		return errors.New("invalid platform")
 	}
@@ -43,7 +46,8 @@ func UpdateRefreshToken(userID int64, platform, refreshToken string) error {
 	return err
 }
 
-func DeleteUserRefreshToken(userId int64, platform string) error {
+// DeleteUserRefreshToken clears the stored refresh token for the given platform.
+func DeleteUserRefreshToken(userID int64, platform string) error {
 	db, err := db.GetDB()
 	if err != nil {
 		return err
@@ -51,9 +55,15 @@ func DeleteUserRefreshToken(userId int64, platform string) error {
 
 	switch platform {
 	case PlatformWeb:
-		_, err = db.Exec("UPDATE users SET refresh_token_web = NULL, refresh_token_web_at = NULL WHERE id = ?", userId)
+		_, err = db.Exec(
+			`UPDATE users SET refresh_token_web = NULL, refresh_token_web_updated_at = NULL WHERE id = $1`,
+			userID,
+		)
 	case PlatformMobile:
-		_, err = db.Exec("UPDATE users SET refresh_token_mobile = NULL, refresh_token_mobile_at = NULL WHERE id = ?", userId)
+		_, err = db.Exec(
+			`UPDATE users SET refresh_token_mobile = NULL, refresh_token_mobile_updated_at = NULL WHERE id = $1`,
+			userID,
+		)
 	default:
 		return errors.New("invalid platform")
 	}
@@ -61,7 +71,8 @@ func DeleteUserRefreshToken(userId int64, platform string) error {
 	return err
 }
 
-func GetUserByRefreshToken(refreshToken string, platform string) (*models.User, error) {
+// GetUserByRefreshToken looks up a user by their stored refresh token for the given platform.
+func GetUserByRefreshToken(refreshToken, platform string) (*models.User, error) {
 	db, err := db.GetDB()
 	if err != nil {
 		return nil, err
@@ -69,11 +80,28 @@ func GetUserByRefreshToken(refreshToken string, platform string) (*models.User, 
 
 	var user models.User
 	var query string
+
 	switch platform {
 	case PlatformWeb:
-		query = "SELECT id, name, email, password, refresh_token_web, refresh_token_web_at, refresh_token_mobile, refresh_token_mobile_at, created_at FROM users WHERE refresh_token_web = ?"
+		query = `
+			SELECT id, name, email, password,
+			       COALESCE(avatar_url, ''),
+			       COALESCE(refresh_token_web, ''),
+			       COALESCE(refresh_token_web_updated_at, '1970-01-01'),
+			       COALESCE(refresh_token_mobile, ''),
+			       COALESCE(refresh_token_mobile_updated_at, '1970-01-01'),
+			       created_at, updated_at
+			FROM users WHERE refresh_token_web = $1`
 	case PlatformMobile:
-		query = "SELECT id, name, email, password, refresh_token_web, refresh_token_web_at, refresh_token_mobile, refresh_token_mobile_at, created_at FROM users WHERE refresh_token_mobile = ?"
+		query = `
+			SELECT id, name, email, password,
+			       COALESCE(avatar_url, ''),
+			       COALESCE(refresh_token_web, ''),
+			       COALESCE(refresh_token_web_updated_at, '1970-01-01'),
+			       COALESCE(refresh_token_mobile, ''),
+			       COALESCE(refresh_token_mobile_updated_at, '1970-01-01'),
+			       created_at, updated_at
+			FROM users WHERE refresh_token_mobile = $1`
 	default:
 		return nil, errors.New("invalid platform")
 	}
@@ -83,11 +111,13 @@ func GetUserByRefreshToken(refreshToken string, platform string) (*models.User, 
 		&user.Name,
 		&user.Email,
 		&user.Password,
+		&user.AvatarURL,
 		&user.RefreshTokenForWeb,
 		&user.RefreshTokenForWebUpdatedAt,
 		&user.RefreshTokenForApp,
 		&user.RefreshTokenForAppUpdatedAt,
 		&user.CreatedAt,
+		&user.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
