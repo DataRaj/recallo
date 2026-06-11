@@ -4,45 +4,50 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"gotel/internals/models"
-	"gotel/internals/utils"
+	"recallo/internals/models"
+	"recallo/internals/utils"
 )
 
-func handleUserRegistration(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		name     string "json:name"
-		email    string "json:email"
-		password string "json:password"
-	}
+type registerRequest struct {
+	Name     string `json:"name"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
 
-	err := json.NewDecoder(r.Body).Decode(&req)
-	if err != nil {
-		utils.JSON(w, 500, false, "Invalid entered data, please try again", nil)
+func handleUserRegistration(w http.ResponseWriter, r *http.Request) {
+	var req registerRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.JSON(w, http.StatusBadRequest, false, "Invalid request body", nil)
 		return
 	}
+	defer r.Body.Close()
 
-	if req.email == "" || req.name == "" || req.password == "" {
+	if req.Email == "" || req.Name == "" || req.Password == "" {
 		utils.JSON(w, http.StatusBadRequest, false, "Invalid credentials", nil)
 		return
 	}
 
-	if existingUser, _ := models.GetUserByEmail(req.email); existingUser != nil {
+	if existingUser, _ := models.GetUserByEmail(req.Email); existingUser != nil {
 		utils.JSON(w, http.StatusConflict, false, "Email is already exists", nil)
 		return
 	}
 
-	hashedPassword, err := utils.HashPassword(req.password)
+	hashedPassword, err := utils.HashPassword(req.Password)
 	if err != nil {
 		utils.JSON(w, http.StatusInternalServerError, false, "Signed up failed, please try again later", nil)
 		return
 	}
 
-	user, err := models.CreateUser(req.name, req.email, hashedPassword)
+	user, err := models.CreateUser(req.Name, req.Email, hashedPassword)
 	if err != nil {
-		utils.JSON(w, http.StatusInternalServerError, false, "Could not create an user", nil)
+		utils.JSON(w, http.StatusInternalServerError, false, "Could not create user", nil)
 		return
 	}
-	_ = user
 
-	utils.JSON(w, http.StatusCreated, true, "User has been created successfully", nil)
+	utils.JSON(w, http.StatusCreated, true, "Account created successfully", map[string]any{
+		"id":    user.ID,
+		"name":  user.Name,
+		"email": user.Email,
+	})
 }

@@ -59,14 +59,12 @@ func InitDB(dsn string, cfg Config) error {
 	pragmas := []string{
 		"SET synchronous_commit = 'local';",
 		"SET lock_timeout = 5000;",
-		"SET statement_timeout = 10000;", // "PRAGMA temp_store=MEMORY;",
+		"SET statement_timeout = 10000;",
 	}
-
-	for _, pragma := range pragmas {
-		_, err := db.Exec(pragma)
-		if err != nil {
+	for _, p := range pragmas {
+		if _, err := db.Exec(p); err != nil {
 			_ = db.Close()
-			return fmt.Errorf("failed to set pragma '%s': %w", pragma, err)
+			return fmt.Errorf("failed to apply session setting '%s': %w", p, err)
 		}
 	}
 
@@ -82,7 +80,7 @@ func InitDB(dsn string, cfg Config) error {
         refresh_token_mobile TEXT,
         refresh_token_mobile_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );`,
+		);`,
 
 		// Privates
 		`CREATE TABLE IF NOT EXISTS privates (
@@ -94,7 +92,7 @@ func InitDB(dsn string, cfg Config) error {
         CHECK(user1_id < user2_id),
         FOREIGN KEY(user1_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY(user2_id) REFERENCES users(id) ON DELETE CASCADE
-    );`,
+		);`,
 
 		// Messages
 		`CREATE TABLE IF NOT EXISTS messages (
@@ -108,13 +106,13 @@ func InitDB(dsn string, cfg Config) error {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(from_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY(private_id) REFERENCES privates(id) ON DELETE CASCADE
-    );`,
+		);`,
 	}
 	for _, table := range tables {
 		_, err := db.Exec(table)
 		if err != nil {
 			_ = db.Close()
-			return fmt.Errorf("failed to create table: %w", err)
+			return fmt.Errorf("schema migration failed: %w", err)
 		}
 	}
 
@@ -129,32 +127,32 @@ func InitDB(dsn string, cfg Config) error {
 		_, err := db.Exec(index)
 		if err != nil {
 			_ = db.Close()
-			return fmt.Errorf("failed to create index: %w", err)
+			return fmt.Errorf("index migration failed: %w", err)
 		}
 	}
 
 	DB = db
-
-	log.Println("Database connection pool established successfully")
+	log.Println("[db] connection pool established — Recallo schema ready")
 	return nil
 }
 
 // GetDB returns the global *sql.DB instance.
-// Callers should not hold on to this reference beyond a single request lifecycle.
 func GetDB() (*sql.DB, error) {
+	if DB == nil {
+		return nil, fmt.Errorf("database not initialised — call InitDB first")
+	}
 	return DB, nil
 }
 
 // CloseDBConnection drains and closes the connection pool gracefully.
-// Should be called via defer in main() after a shutdown signal is received.
 func CloseDBConnection() {
 	if DB == nil {
 		return
 	}
 
 	if err := DB.Close(); err != nil {
-		log.Printf("Error closing database connection pool: %v", err)
+		log.Printf("[db] error closing pool: %v", err)
 	} else {
-		log.Println("Database connection pool closed successfully")
+		log.Println("[db] connection pool closed")
 	}
 }
