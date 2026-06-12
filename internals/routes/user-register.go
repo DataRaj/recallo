@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"recallo/internals/logger"
 	"recallo/internals/models"
 	"recallo/internals/utils"
 )
@@ -18,33 +19,42 @@ func handleUserRegistration(w http.ResponseWriter, r *http.Request) {
 	var req registerRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.App.Printf("[REGISTER] error=decode_failure remote=%s err=%v", r.RemoteAddr, err)
 		utils.JSON(w, http.StatusBadRequest, false, "Invalid request body", nil)
 		return
 	}
 	defer r.Body.Close()
 
 	if req.Email == "" || req.Name == "" || req.Password == "" {
+		logger.App.Printf("[REGISTER] error=missing_fields remote=%s email=%q name_empty=%v",
+			r.RemoteAddr, req.Email, req.Name == "")
 		utils.JSON(w, http.StatusBadRequest, false, "Invalid credentials", nil)
 		return
 	}
 
+	logger.App.Printf("[REGISTER] attempt email=%q remote=%s", req.Email, r.RemoteAddr)
+
 	if existingUser, _ := models.GetUserByEmail(req.Email); existingUser != nil {
+		logger.App.Printf("[REGISTER] error=duplicate_email email=%q remote=%s", req.Email, r.RemoteAddr)
 		utils.JSON(w, http.StatusConflict, false, "Email is already exists", nil)
 		return
 	}
 
 	hashedPassword, err := utils.HashPassword(req.Password)
 	if err != nil {
+		logger.App.Printf("[REGISTER] error=hash_failure email=%q remote=%s err=%v", req.Email, r.RemoteAddr, err)
 		utils.JSON(w, http.StatusInternalServerError, false, "Signed up failed, please try again later", nil)
 		return
 	}
 
 	user, err := models.CreateUser(req.Name, req.Email, hashedPassword)
 	if err != nil {
+		logger.App.Printf("[REGISTER] error=db_create_failure email=%q remote=%s err=%v", req.Email, r.RemoteAddr, err)
 		utils.JSON(w, http.StatusInternalServerError, false, "Could not create user", nil)
 		return
 	}
 
+	logger.App.Printf("[REGISTER] success user_id=%d email=%q remote=%s", user.ID, user.Email, r.RemoteAddr)
 	utils.JSON(w, http.StatusCreated, true, "Account created successfully", map[string]any{
 		"id":    user.ID,
 		"name":  user.Name,

@@ -11,6 +11,7 @@ import (
 
 	"recallo/db"
 	"recallo/internals/configs"
+	"recallo/internals/logger"
 	"recallo/internals/middleware"
 	"recallo/internals/routes"
 	"recallo/internals/utils"
@@ -18,6 +19,15 @@ import (
 
 func main() {
 	cfg := configs.LoadConfig()
+
+	// Initialise shared logger — writes to stdout AND logs/app.log.
+	closeLog, err := logger.Init()
+	if err != nil {
+		log.Fatalf("[startup] failed to initialise logger: %v", err)
+	}
+	defer closeLog()
+
+	logger.App.Printf("[startup] logger initialised — output also tailing logs/app.log")
 
 	// Initialise JWT signing key so all handlers can sign/verify tokens.
 	utils.InitJWT(cfg.JWTSecretKey)
@@ -52,6 +62,7 @@ func main() {
 		log.Println("  POST /api/v1/auth/login")
 		log.Println("  POST /api/v1/auth/refresh")
 		log.Println("  POST /api/v1/auth/logout   [protected]")
+		log.Println("  POST /api/v1/auth/refresh-session   [protected]")
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("[recallo] server error: %v", err)
 		}

@@ -16,11 +16,16 @@ func RegisterRoutes() http.Handler {
 	mux.HandleFunc("GET /api/v1/healthcheck", Healthcheck)
 	mux.HandleFunc("POST /api/v1/auth/register", handleUserRegistration)
 	mux.HandleFunc("POST /api/v1/auth/login", handlers.HandleEmailLogin)
-	mux.HandleFunc("POST /api/v1/auth/refresh", handlers.HandleRefreshSession)
+	mux.HandleFunc("POST /api/v1/auth/refresh-session", handlers.HandleRefreshSession)
 
 	// ── Protected (require valid JWT) ─────────────────────────────────────────
 	mux.Handle("POST /api/v1/auth/logout",
-		middleware.AuthenticateMiddleware(http.HandlerFunc(handlers.HandleLogout)))
+		middleware.Authenticate(http.HandlerFunc(handlers.HandleLogout)))
+
+	mux.Handle("GET /api/v1/auth/current-user",
+		middleware.Authenticate(http.HandlerFunc(handlers.HandleGetCurrentUser)))
+
+	mux.Handle("GET /api/v1/users/{id}", middleware.Authenticate(http.HandlerFunc(handlers.GetUserByID)))
 
 	// Wrap entire mux with CORS so preflight OPTIONS requests are handled globally.
 	return middleware.CORSMiddleware(mux)
