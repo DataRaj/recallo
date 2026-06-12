@@ -1,0 +1,161 @@
+@baseUrl = http://localhost:8080/api/v1
+@contentType = application/json
+
+
+### ──────────────────────────────────────────
+###  REGISTER
+### ──────────────────────────────────────────
+
+# ✅ Happy path — new user
+POST {{baseUrl}}/auth/register
+Content-Type: {{contentType}}
+
+{
+  "name": "Dattaraj",
+  "email": "datta@example.com",
+  "password": "secret123"
+}
+
+###
+
+# ❌ Duplicate email
+POST {{baseUrl}}/auth/register
+Content-Type: {{contentType}}
+
+{
+  "name": "Dattaraj",
+  "email": "datta@example.com",
+  "password": "secret123"
+}
+
+###
+
+# ❌ Missing fields
+POST {{baseUrl}}/auth/register
+Content-Type: {{contentType}}
+
+{
+  "email": "datta@example.com"
+}
+
+
+### ──────────────────────────────────────────
+###  LOGIN
+### ──────────────────────────────────────────
+
+# ✅ Happy path — web platform
+POST {{baseUrl}}/auth/login
+Content-Type: {{contentType}}
+X-Platform: web
+
+{
+  "email": "datta@example.com",
+  "password": "secret123"
+}
+
+###
+
+# ✅ Happy path — mobile platform
+POST {{baseUrl}}/auth/login
+Content-Type: {{contentType}}
+X-Platform: mobile
+
+{
+  "email": "datta@example.com",
+  "password": "secret123"
+}
+
+###
+
+# ❌ Wrong password
+POST {{baseUrl}}/auth/login
+Content-Type: {{contentType}}
+X-Platform: web
+
+{
+  "email": "datta@example.com",
+  "password": "wrongpass"
+}
+
+###
+
+# ❌ Invalid / missing platform header
+POST {{baseUrl}}/auth/login
+Content-Type: {{contentType}}
+
+{
+  "email": "datta@example.com",
+  "password": "secret123"
+}
+
+###
+
+# ❌ Missing email or password
+POST {{baseUrl}}/auth/login
+Content-Type: {{contentType}}
+X-Platform: web
+
+{
+  "email": ""
+}
+
+
+### ──────────────────────────────────────────
+###  REFRESH SESSION
+### ──────────────────────────────────────────
+
+# ✅ Happy path — paste refresh_token from login response
+POST {{baseUrl}}/auth/refresh
+Content-Type: {{contentType}}
+X-Platform: web
+
+{
+  "refresh_token": "PASTE_REFRESH_TOKEN_HERE"
+}
+
+###
+
+# ❌ Invalid refresh token
+POST {{baseUrl}}/auth/refresh
+Content-Type: {{contentType}}
+X-Platform: web
+
+{
+  "refresh_token": "invalid.token.value"
+}
+
+###
+
+# ❌ Missing platform
+POST {{baseUrl}}/auth/refresh
+Content-Type: {{contentType}}
+
+{
+  "refresh_token": "PASTE_REFRESH_TOKEN_HERE"
+}
+
+
+### ──────────────────────────────────────────
+###  LOGOUT  (protected — needs Bearer token)
+### ──────────────────────────────────────────
+
+# ✅ Happy path — paste access_token from login response
+POST {{baseUrl}}/auth/logout
+Content-Type: {{contentType}}
+X-Platform: web
+Authorization: Bearer PASTE_ACCESS_TOKEN_HERE
+
+###
+
+# ❌ No token
+POST {{baseUrl}}/auth/logout
+Content-Type: {{contentType}}
+X-Platform: web
+
+###
+
+# ❌ Wrong platform (token issued for web, sending mobile)
+POST {{baseUrl}}/auth/logout
+Content-Type: {{contentType}}
+X-Platform: mobile
+Authorization: Bearer PASTE_ACCESS_TOKEN_HERE
