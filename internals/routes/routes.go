@@ -27,6 +27,10 @@ func RegisterRoutes() http.Handler {
 
 	mux.Handle("GET /api/v1/users/{id}", middleware.Authenticate(http.HandlerFunc(handlers.GetUserByID)))
 
+	mux.Handle("GET /api/v1/private/{private}", middleware.Authenticate(http.HandlerFunc(handlers.HandleGetPrivate)))
 	// Wrap entire mux with CORS so preflight OPTIONS requests are handled globally.
+
+	mux.Handle("POST /api/v1/files/{private_id}", middleware.Authenticate(http.HandlerFunc(handlers.HandleFileUpload)))
+	mux.Handle("GET /api/v1/files/", middleware.AuthenticateHandler(handlers.HandleGetFile()))
 	return middleware.CORSMiddleware(mux)
 }
