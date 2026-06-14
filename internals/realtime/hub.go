@@ -1,6 +1,11 @@
 package realtime
 
-import "sync"
+import (
+	"log"
+	"sync"
+
+	"recallo/internals/models"
+)
 
 type Hub struct {
 	Clients map[int64]map[*Client]struct{} `json:"clients"`
@@ -61,5 +66,36 @@ func (h *Hub) SendEventToUserIds(userIds []int64, sendId int64, eventType EventT
 				payload,
 			})
 		}
+	}
+}
+
+func (h *Hub) RegisterClientConnection(client *Client) {
+	h.mu.Lock()
+
+	conns, ok := h.Clients[client.User.ID]
+	if !ok {
+		conns = make(map[*Client]struct{})
+		h.Clients[client.User.ID] = conns
+	}
+
+	conns[client] = struct{}{}
+	firstConn := len(conns) == 1
+	h.mu.Unlock()
+
+	if firstConn {
+		// Broadcast online presence to all connected clients.
+		h.BroadcastToAll(Event{
+			EventType: EventUserOnline,
+			Payload:   client.User.ToMap(),
+		})
+
+		// Silently mark all incoming undelivered messages as delivered in the DB.
+		// A single UPDATE query — no loops, no WebSocket fanout to the sender.
+		// Senders see the ✓✓ state the next time they load the conversation via REST.
+		go func() {
+			if err := models.MarkAllIncomingMessagesAsDelivered(client.User.ID); err != nil {
+				log.Printf("[HUB] failed to mark messages delivered for user %d: %v", client.User.ID, err)
+			}
+		}()
 	}
 }

@@ -9,10 +9,10 @@ import (
 )
 
 type Client struct {
-	User *models.User   `json:"user"`
-	Conn websocket.Conn `json:"-"`
-	Send chan Event     `json:"-"`
-	once sync.Once      `json:"-"`
+	User *models.User    `json:"user"`
+	Conn *websocket.Conn `json:"-"`
+	Send chan Event       `json:"-"`
+	once sync.Once       `json:"-"`
 }
 
 func (c *Client) SendEvent(event Event) {
