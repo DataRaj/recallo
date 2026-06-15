@@ -174,6 +174,28 @@ func GetUndeliveredMessagesByPrivateID(privateId int64) ([]*Message, error) {
 	return messages, nil
 }
 
+// MarkAllIncomingMessagesAsDelivered silently marks every undelivered message
+// sent TO userID (not by them) as delivered=1 in a single atomic query.
+// Called on WebSocket connect so no goroutine-level looping is needed.
+func MarkAllIncomingMessagesAsDelivered(userID int64) error {
+	db, err := db.GetDB()
+	if err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`
+		UPDATE messages
+		SET delivered = 1
+		WHERE delivered = 0
+		  AND from_id != ?
+		  AND private_id IN (
+		      SELECT id FROM privates WHERE user1_id = ? OR user2_id = ?
+		  )
+	`, userID, userID, userID)
+
+	return err
+}
+
 func MarkMessageAsDelivered(messageId int64) error {
 	db, err := db.GetDB()
 	if err != nil {
