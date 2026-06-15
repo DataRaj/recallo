@@ -99,3 +99,90 @@ func (h *Hub) RegisterClientConnection(client *Client) {
 		}()
 	}
 }
+
+func (h *Hub) UnRegisterClientConnection(client *Client) {
+	h.mu.Lock()
+	conns, ok := h.Clients[client.User.ID]
+	if !ok {
+		h.mu.Unlock()
+		return
+	}
+
+	delete(conns, client)
+	noConnectionLeft := len(conns) == 0
+	if noConnectionLeft {
+		delete(h.Clients, client.User.ID)
+	}
+	h.mu.Unlock()
+
+	if noConnectionLeft {
+		h.BroadcastToAll(Event{
+			EventUserOffline,
+			client.User.ToMap(),
+		})
+	}
+}
+
+func (h *Hub) SentCurrentClients(client *Client) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	users := make([]map[string]any, 0, len(h.Clients))
+	seen := make(map[int64]struct{})
+
+	for userId, conns := range h.Clients {
+		if userId == client.User.ID {
+			continue
+		}
+		_, ok := seen[userId]
+		if ok {
+			continue
+		}
+		for c := range conns {
+			users = append(users, c.User.ToMap())
+			seen[userId] = struct{}{}
+			break
+
+		}
+	}
+	client.Send <- Event{
+		EventType: EventCurrentUsers,
+		Payload:   users,
+	}
+}
+
+func (h *Hub) SendError(clientId int64, errorMessage string) {
+	h.mu.RLock()
+	clients, ok := h.Clients[clientId]
+	h.mu.RUnlock()
+
+	if !ok || len(clients) < 1 {
+		return
+	}
+
+	for client := range clients {
+		client.SendEvent(Event{
+			EventError,
+			map[string]string{
+				"message": errorMessage,
+			},
+		})
+	}
+}
+
+func (h *Hub) Shutdown() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	log.Println("[HUB] Shutting down hub, notifying clients...")
+	for _, clients := range h.Clients {
+		for client := range clients {
+			client.SendEvent(Event{
+				EventType: EventShutdown,
+				Payload:   "Server is shutting down",
+			})
+			client.Close()
+		}
+	}
+	h.Clients = make(map[int64]map[*Client]struct{})
+	log.Println("[HUB] Hub shutdown complete.")
+}
