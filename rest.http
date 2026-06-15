@@ -1,10 +1,16 @@
-@baseUrl = http://localhost:8080/api/v1
+@baseUrl    = http://localhost:8080/api/v1
 @contentType = application/json
 
+# ─────────────────────────────────────────────────────────────
+# Set these after a successful login
+# ─────────────────────────────────────────────────────────────
+@accessToken  = PASTE_ACCESS_TOKEN_HERE
+@refreshToken = PASTE_REFRESH_TOKEN_HERE
 
-### ──────────────────────────────────────────
-###  REGISTER
-### ──────────────────────────────────────────
+
+### ══════════════════════════════════════════════════════════
+###  AUTH — REGISTER
+### ══════════════════════════════════════════════════════════
 
 # ✅ Happy path — new user
 POST {{baseUrl}}/auth/register
@@ -30,7 +36,7 @@ Content-Type: {{contentType}}
 
 ###
 
-# ❌ Missing fields
+# ❌ Missing required fields
 POST {{baseUrl}}/auth/register
 Content-Type: {{contentType}}
 
@@ -39,9 +45,9 @@ Content-Type: {{contentType}}
 }
 
 
-### ──────────────────────────────────────────
-###  LOGIN
-### ──────────────────────────────────────────
+### ══════════════════════════════════════════════════════════
+###  AUTH — LOGIN
+### ══════════════════════════════════════════════════════════
 
 # ✅ Happy path — web platform
 POST {{baseUrl}}/auth/login
@@ -79,7 +85,7 @@ X-Platform: web
 
 ###
 
-# ❌ Invalid / missing platform header
+# ❌ Missing X-Platform header
 POST {{baseUrl}}/auth/login
 Content-Type: {{contentType}}
 
@@ -90,7 +96,7 @@ Content-Type: {{contentType}}
 
 ###
 
-# ❌ Missing email or password
+# ❌ Missing email/password body
 POST {{baseUrl}}/auth/login
 Content-Type: {{contentType}}
 X-Platform: web
@@ -100,23 +106,23 @@ X-Platform: web
 }
 
 
-### ──────────────────────────────────────────
-###  REFRESH SESSION
-### ──────────────────────────────────────────
+### ══════════════════════════════════════════════════════════
+###  AUTH — REFRESH SESSION
+### ══════════════════════════════════════════════════════════
 
 # ✅ Happy path — paste refresh_token from login response
-POST {{baseUrl}}/auth/refresh
+POST {{baseUrl}}/auth/refresh-session
 Content-Type: {{contentType}}
 X-Platform: web
 
 {
-  "refresh_token": "PASTE_REFRESH_TOKEN_HERE"
+  "refresh_token": "{{refreshToken}}"
 }
 
 ###
 
-# ❌ Invalid refresh token
-POST {{baseUrl}}/auth/refresh
+# ❌ Invalid/expired token
+POST {{baseUrl}}/auth/refresh-session
 Content-Type: {{contentType}}
 X-Platform: web
 
@@ -126,24 +132,24 @@ X-Platform: web
 
 ###
 
-# ❌ Missing platform
-POST {{baseUrl}}/auth/refresh
+# ❌ Missing X-Platform header
+POST {{baseUrl}}/auth/refresh-session
 Content-Type: {{contentType}}
 
 {
-  "refresh_token": "PASTE_REFRESH_TOKEN_HERE"
+  "refresh_token": "{{refreshToken}}"
 }
 
 
-### ──────────────────────────────────────────
-###  LOGOUT  (protected — needs Bearer token)
-### ──────────────────────────────────────────
+### ══════════════════════════════════════════════════════════
+###  AUTH — LOGOUT  (protected)
+### ══════════════════════════════════════════════════════════
 
-# ✅ Happy path — paste access_token from login response
+# ✅ Happy path
 POST {{baseUrl}}/auth/logout
 Content-Type: {{contentType}}
 X-Platform: web
-Authorization: Bearer PASTE_ACCESS_TOKEN_HERE
+Authorization: Bearer {{accessToken}}
 
 ###
 
@@ -154,8 +160,156 @@ X-Platform: web
 
 ###
 
-# ❌ Wrong platform (token issued for web, sending mobile)
+# ❌ Platform mismatch (token issued for web, sending mobile)
 POST {{baseUrl}}/auth/logout
 Content-Type: {{contentType}}
 X-Platform: mobile
-Authorization: Bearer PASTE_ACCESS_TOKEN_HERE
+Authorization: Bearer {{accessToken}}
+
+
+### ══════════════════════════════════════════════════════════
+###  AUTH — CURRENT USER  (protected)
+### ══════════════════════════════════════════════════════════
+
+# ✅ Happy path
+GET {{baseUrl}}/auth/current-user
+Content-Type: {{contentType}}
+X-Platform: web
+Authorization: Bearer {{accessToken}}
+
+###
+
+# ❌ No token
+GET {{baseUrl}}/auth/current-user
+Content-Type: {{contentType}}
+X-Platform: web
+
+
+### ══════════════════════════════════════════════════════════
+###  USERS  (protected)
+### ══════════════════════════════════════════════════════════
+
+# ✅ Get user by ID
+GET {{baseUrl}}/users/1
+Content-Type: {{contentType}}
+X-Platform: web
+Authorization: Bearer {{accessToken}}
+
+###
+
+# ❌ Non-existent user
+GET {{baseUrl}}/users/99999
+Content-Type: {{contentType}}
+X-Platform: web
+Authorization: Bearer {{accessToken}}
+
+
+### ══════════════════════════════════════════════════════════
+###  PRIVATE CONVERSATIONS  (protected)
+### ══════════════════════════════════════════════════════════
+
+# ✅ Join (or create) a private chat with another user
+POST {{baseUrl}}/private/join
+Content-Type: {{contentType}}
+X-Platform: web
+Authorization: Bearer {{accessToken}}
+
+{
+  "receiver_id": 2
+}
+
+###
+
+# ✅ Get all conversations for the current user
+GET {{baseUrl}}/private/conversations
+Content-Type: {{contentType}}
+X-Platform: web
+Authorization: Bearer {{accessToken}}
+
+###
+
+# ✅ Get a specific private room by ID
+GET {{baseUrl}}/private/1
+Content-Type: {{contentType}}
+X-Platform: web
+Authorization: Bearer {{accessToken}}
+
+###
+
+# ❌ Invalid private ID
+GET {{baseUrl}}/private/abc
+Content-Type: {{contentType}}
+X-Platform: web
+Authorization: Bearer {{accessToken}}
+
+
+### ══════════════════════════════════════════════════════════
+###  MESSAGES  (protected)
+### ══════════════════════════════════════════════════════════
+
+# ✅ Get messages — default pagination (page=1, limit=20)
+GET {{baseUrl}}/private/1/messages
+Content-Type: {{contentType}}
+X-Platform: web
+Authorization: Bearer {{accessToken}}
+
+###
+
+# ✅ Get messages — custom pagination
+GET {{baseUrl}}/private/1/messages?page=2&limit=10
+Content-Type: {{contentType}}
+X-Platform: web
+Authorization: Bearer {{accessToken}}
+
+###
+
+# ❌ Limit exceeds max (100)
+GET {{baseUrl}}/private/1/messages?limit=200
+Content-Type: {{contentType}}
+X-Platform: web
+Authorization: Bearer {{accessToken}}
+
+###
+
+# ❌ Invalid page number
+GET {{baseUrl}}/private/1/messages?page=0
+Content-Type: {{contentType}}
+X-Platform: web
+Authorization: Bearer {{accessToken}}
+
+
+### ══════════════════════════════════════════════════════════
+###  FILES  (protected)
+### ══════════════════════════════════════════════════════════
+
+# ✅ Upload a file to a private conversation
+# Replace <private_id> with a real ID, and attach a file via multipart form.
+# In HTTP clients like Bruno or Insomnia, set body to multipart/form-data
+# with field key "file" pointing to your local file.
+POST {{baseUrl}}/files/1
+Content-Type: multipart/form-data; boundary=----FormBoundary
+X-Platform: web
+Authorization: Bearer {{accessToken}}
+
+------FormBoundary
+Content-Disposition: form-data; name="file"; filename="test.txt"
+Content-Type: text/plain
+
+Hello from Recallo file upload test.
+------FormBoundary--
+
+###
+
+# ✅ Retrieve an uploaded file (static file server)
+# Replace path with an actual file_url returned from upload response.
+GET {{baseUrl}}/files/chats/1/1/test.txt
+X-Platform: web
+Authorization: Bearer {{accessToken}}
+
+
+### ══════════════════════════════════════════════════════════
+###  MISC
+### ══════════════════════════════════════════════════════════
+
+# ✅ Health check (public)
+GET {{baseUrl}}/healthcheck

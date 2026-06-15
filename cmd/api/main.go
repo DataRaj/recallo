@@ -13,6 +13,7 @@ import (
 	"recallo/internals/configs"
 	"recallo/internals/logger"
 	"recallo/internals/middleware"
+	"recallo/internals/realtime"
 	"recallo/internals/routes"
 	"recallo/internals/utils"
 )
@@ -37,6 +38,9 @@ func main() {
 		log.Fatalf("[startup] failed to initialise database: %v", err)
 	}
 	defer db.CloseDBConnection()
+
+	hub := realtime.NewHub()
+	defer hub.Shutdown()
 
 	// Build route handler (CORS already applied inside RegisterRoutes).
 	routeHandler := routes.RegisterRoutes()
