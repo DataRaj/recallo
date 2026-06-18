@@ -104,7 +104,7 @@ Recallo is a backend platform for real-time 1-toSt-1 private chat. Users can reg
 
 | Endpoint        | Description                                        |
 | --------------- | -------------------------------------------------- |
-| `WS /api/v1/ws` | Persistent connection — real-time events (planned) |
+| `WS /api/v1/ws` | Persistent connection — real-time events           |
 
 ---
 
@@ -235,6 +235,7 @@ The `Hub` (in `internals/realtime/hub.go`) is the central registry of live WebSo
 | `typing`       | Server → User   | Typing indicator                |
 | `new_private`  | Server → User   | New private room opened         |
 | `current_user` | Server → User   | Current online user list        |
+| `error`        | Server → Client | Error processing request        |
 | `heartbeat`    | Server ↔ Client | Keep-alive ping                 |
 | `shutdown`     | Server → All    | Graceful server shutdown signal |
 
@@ -254,7 +255,7 @@ Files are served via a static file server at `/api/v1/files/*`.
 | ---------------- | -------------- | ------------------- |
 | `ENV`            | `dev`          | Runtime environment |
 | `HTTP_ADDRESS`   | `0.0.0.0:8080` | Server bind address |
-| `DATABASE_URL`   | `./recallo.db` | Postgres file path    |
+| `DATABASE_URL`   | `postgres://...`| Postgres conn str   |
 | `JWT_SECRET_KEY` | _(required)_   | JWT signing secret  |
 
 ```bash
@@ -286,5 +287,5 @@ make test
 
 ## Prerequisites
 
-- Go 1.22+
-- No external database setup needed — postgresql file is created automatically on first run.
+- Go 1.25+
+- PostgreSQL database running (tables are auto-created at startup, no migrations needed).
