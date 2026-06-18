@@ -11,8 +11,16 @@ import (
 type Client struct {
 	User *models.User    `json:"user"`
 	Conn *websocket.Conn `json:"-"`
-	Send chan Event       `json:"-"`
+	Send chan Event      `json:"-"`
 	once sync.Once       `json:"-"`
+}
+
+func NewClient(user *models.User, conn *websocket.Conn) *Client {
+	return &Client{
+		User: user,
+		Conn: conn,
+		Send: make(chan Event, 512),
+	}
 }
 
 func (c *Client) SendEvent(event Event) {
