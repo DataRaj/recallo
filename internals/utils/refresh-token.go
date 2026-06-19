@@ -85,7 +85,6 @@ func GetUserByRefreshToken(refreshToken, platform string) (*models.User, error) 
 	case PlatformWeb:
 		query = `
 			SELECT id, name, email, password,
-			       COALESCE(avatar_url, ''),
 			       COALESCE(refresh_token_web, ''),
 			       COALESCE(refresh_token_web_updated_at, '1970-01-01'),
 			       COALESCE(refresh_token_mobile, ''),
@@ -95,7 +94,6 @@ func GetUserByRefreshToken(refreshToken, platform string) (*models.User, error) 
 	case PlatformMobile:
 		query = `
 			SELECT id, name, email, password,
-			       COALESCE(avatar_url, ''),
 			       COALESCE(refresh_token_web, ''),
 			       COALESCE(refresh_token_web_updated_at, '1970-01-01'),
 			       COALESCE(refresh_token_mobile, ''),
@@ -111,7 +109,6 @@ func GetUserByRefreshToken(refreshToken, platform string) (*models.User, error) 
 		&user.Name,
 		&user.Email,
 		&user.Password,
-		&user.AvatarURL,
 		&user.RefreshTokenForWeb,
 		&user.RefreshTokenForWebUpdatedAt,
 		&user.RefreshTokenForApp,

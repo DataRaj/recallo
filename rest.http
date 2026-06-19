@@ -4,8 +4,9 @@
 # ─────────────────────────────────────────────────────────────
 # Set these after a successful login
 # ─────────────────────────────────────────────────────────────
-@accessToken  = PASTE_ACCESS_TOKEN_HERE
-@refreshToken = PASTE_REFRESH_TOKEN_HERE
+@accessToken  = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJuYW1lIjoiRGF0dGFyYWoiLCJYLVBsYXRmb3JtIjoibW9iaWxlIiwic3ViIjoiMSIsImV4cCI6MTc4MTg2NjQ3OH0.Yb9TKfuMQwtTEGIjjvPra7cnxAX8AgfWKkVtfE-PVTw
+@refreshToken = 79UHRfoCH1eVp-w8i7NJzcMAAo-c8NIaKyQaxk_Bc2Q=
+
 
 
 ### ══════════════════════════════════════════════════════════
@@ -29,8 +30,8 @@ POST {{baseUrl}}/auth/register
 Content-Type: {{contentType}}
 
 {
-  "name": "Dattaraj",
-  "email": "datta@example.com",
+  "name": "Yash",
+  "email": "yash@example.com",
   "password": "secret123"
 }
 
@@ -55,8 +56,8 @@ Content-Type: {{contentType}}
 X-Platform: web
 
 {
-  "email": "datta@example.com",
-  "password": "secret123"
+  "email": "[EMAIL_ADDRESS]",
+  "password": "[PASSWORD]"
 }
 
 ###
@@ -205,11 +206,19 @@ Authorization: Bearer {{accessToken}}
 
 
 ### ══════════════════════════════════════════════════════════
-###  PRIVATE CONVERSATIONS  (protected)
+###  CONVERSATIONS  (protected)
 ### ══════════════════════════════════════════════════════════
 
-# ✅ Join (or create) a private chat with another user
-POST {{baseUrl}}/private/join
+# ✅ Get all conversations for the current user
+GET {{baseUrl}}/conversations
+Content-Type: {{contentType}}
+X-Platform: web
+Authorization: Bearer {{accessToken}}
+
+###
+
+# ✅ Join (or create) a private conversation
+POST {{baseUrl}}/conversation/private/create
 Content-Type: {{contentType}}
 X-Platform: web
 Authorization: Bearer {{accessToken}}
@@ -220,24 +229,16 @@ Authorization: Bearer {{accessToken}}
 
 ###
 
-# ✅ Get all conversations for the current user
-GET {{baseUrl}}/private/conversations
+# ✅ Get a specific private conversation by ID
+GET {{baseUrl}}/conversation/private/1
 Content-Type: {{contentType}}
 X-Platform: web
 Authorization: Bearer {{accessToken}}
 
 ###
 
-# ✅ Get a specific private room by ID
-GET {{baseUrl}}/private/1
-Content-Type: {{contentType}}
-X-Platform: web
-Authorization: Bearer {{accessToken}}
-
-###
-
-# ❌ Invalid private ID
-GET {{baseUrl}}/private/abc
+# ❌ Non-existent conversation
+GET {{baseUrl}}/conversation/private/99999
 Content-Type: {{contentType}}
 X-Platform: web
 Authorization: Bearer {{accessToken}}
@@ -248,7 +249,7 @@ Authorization: Bearer {{accessToken}}
 ### ══════════════════════════════════════════════════════════
 
 # ✅ Get messages — default pagination (page=1, limit=20)
-GET {{baseUrl}}/private/1/messages
+GET {{baseUrl}}/conversation/private/1/messages
 Content-Type: {{contentType}}
 X-Platform: web
 Authorization: Bearer {{accessToken}}
@@ -256,7 +257,7 @@ Authorization: Bearer {{accessToken}}
 ###
 
 # ✅ Get messages — custom pagination
-GET {{baseUrl}}/private/1/messages?page=2&limit=10
+GET {{baseUrl}}/conversation/private/1/messages?page=2&limit=10
 Content-Type: {{contentType}}
 X-Platform: web
 Authorization: Bearer {{accessToken}}
@@ -264,7 +265,7 @@ Authorization: Bearer {{accessToken}}
 ###
 
 # ❌ Limit exceeds max (100)
-GET {{baseUrl}}/private/1/messages?limit=200
+GET {{baseUrl}}/conversation/private/1/messages?limit=200
 Content-Type: {{contentType}}
 X-Platform: web
 Authorization: Bearer {{accessToken}}
@@ -272,7 +273,7 @@ Authorization: Bearer {{accessToken}}
 ###
 
 # ❌ Invalid page number
-GET {{baseUrl}}/private/1/messages?page=0
+GET {{baseUrl}}/conversation/private/1/messages?page=0
 Content-Type: {{contentType}}
 X-Platform: web
 Authorization: Bearer {{accessToken}}
@@ -305,6 +306,94 @@ Hello from Recallo file upload test.
 GET {{baseUrl}}/files/chats/1/1/test.txt
 X-Platform: web
 Authorization: Bearer {{accessToken}}
+
+
+### ══════════════════════════════════════════════════════════
+###  WEBSOCKET  (GET /api/v1/ws)
+###
+###  REST clients cannot open WebSocket connections directly.
+###  Use one of the options below instead:
+###
+###  ① websocat (CLI):
+###      websocat -H "Authorization: Bearer <token>" \
+###               ws://localhost:8080/api/v1/ws
+###
+###  ② Postman / Insomnia:
+###      URL : ws://localhost:8080/api/v1/ws
+###      Header: Authorization: Bearer <token>
+###
+###  ─────────────────────────────────────────────────────────
+###  All payloads are JSON. Send:  { "event_type": "...", "payload": { ... } }
+###  Receive:                      { "event_type": "...", "payload": { ... } }
+###
+###  Event types emitted BY the server:
+###    current_user   — list of currently online users (on connect)
+###    online         — a user came online
+###    offline        — a user went offline
+###    message        — new chat message
+###    delivered      — message delivery confirmed
+###    read           — message read confirmed
+###    typing         — typing indicator
+###    heartbeat      — keep-alive ping every 30 s (payload: null)
+###    error          — operation failed  { "message": "..." }
+###    shutdown       — server is shutting down
+###
+###  Event types accepted FROM the client:
+### ══════════════════════════════════════════════════════════
+
+# ── Send a text message ─────────────────────────────────────
+# event_type : "message"
+# Required payload fields:
+#   private_id   int   — conversation ID
+#   receiver_id  int   — recipient user ID
+#   message_type string — "text" | "image" | "file"
+#   content      string — message body
+#
+# Example (paste into websocat / Postman message body):
+# {
+#   "event_type": "message",
+#   "payload": {
+#     "private_id":   1,
+#     "receiver_id":  2,
+#     "message_type": "text",
+#     "content":      "Hey, what's up?"
+#   }
+# }
+
+###
+
+# ── Mark a message as delivered ─────────────────────────────
+# event_type : "delivered"
+# {
+#   "event_type": "delivered",
+#   "payload": {
+#     "message_id": 42
+#   }
+# }
+
+###
+
+# ── Mark a message as read ───────────────────────────────────
+# event_type : "read"
+# {
+#   "event_type": "read",
+#   "payload": {
+#     "message_id": 42
+#   }
+# }
+
+###
+
+# ── Send a typing indicator ──────────────────────────────────
+# event_type : "typing"
+# {
+#   "event_type": "typing",
+#   "payload": {
+#     "private_id":  1,
+#     "receiver_id": 2,
+#     "is_typing":   true
+#   }
+# }
 
 
 ### ══════════════════════════════════════════════════════════
