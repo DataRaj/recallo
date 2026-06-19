@@ -2,6 +2,7 @@ package routes
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -45,39 +46,37 @@ func HandleWebSocketConnection(hub *realtime.Hub, w http.ResponseWriter, r *http
 
 	conn, err := websocket.Accept(w, r, &opts)
 	if err != nil {
-		if user != nil {
-			logger.App.Printf("[WEBSOCKET] error=accept_failed user_id=%d err=%v", user.ID, err)
-		} else {
-			logger.App.Printf("[WEBSOCKET] error=accept_failed remote=%s err=%v", r.RemoteAddr, err)
-		}
-		utils.JSON(w, http.StatusInternalServerError, false, "Could not form a websocket connection", nil)
+		logger.App.Printf("[WEBSOCKET] error=accept_failed user_id=%d remote=%s err=%v", user.ID, r.RemoteAddr, err)
+		// NOTE: websocket.Accept already wrote the HTTP error; do not call utils.JSON here.
 		return
 	}
 
-	logger.App.Printf("[WEBSOCKET] success connected user_id=%d remote=%s", user.ID, r.RemoteAddr)
+	logger.App.Printf("[WEBSOCKET] connected user_id=%d remote=%s", user.ID, r.RemoteAddr)
 
 	client := realtime.NewClient(user, conn)
 
-	realtime.NewHub().RegisterClientConnection(client)
-	realtime.NewHub().SentCurrentClients(client)
+	// Use the shared hub that was injected — NOT a fresh NewHub() each time.
+	hub.RegisterClientConnection(client)
+	hub.SentCurrentClients(client)
 
 	defer func() {
-		realtime.NewHub().UnRegisterClientConnection(client)
+		hub.UnRegisterClientConnection(client)
 		client.Close()
+		logger.App.Printf("[WEBSOCKET] disconnected user_id=%d remote=%s", user.ID, r.RemoteAddr)
 	}()
 
 	ctx, cancel := context.WithCancel(r.Context())
-
 	defer cancel()
 
-	go Heartbeat(ctx, *client)
-
+	go heartbeat(ctx, client)
 	go writePump(ctx, client)
 
 	readPump(ctx, cancel, hub, client)
 }
 
-func Heartbeat(ctx context.Context, client realtime.Client) {
+// heartbeat sends a periodic ping to detect stale connections and pushes a
+// heartbeat event so the client knows the connection is still alive.
+func heartbeat(ctx context.Context, client *realtime.Client) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -86,22 +85,24 @@ func Heartbeat(ctx context.Context, client realtime.Client) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			err := client.Conn.Ping(ctx)
+			pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			err := client.Conn.Ping(pingCtx)
+			cancel()
 			if err != nil {
-				logger.App.Printf("[WEBSOCKET] error=ping_failed client_id=%d err=%v", client.User.ID, err)
-				cancel()
+				logger.App.Printf("[WEBSOCKET] error=ping_failed user_id=%d err=%v", client.User.ID, err)
 				return
 			}
-			cancel()
 			client.Send <- realtime.Event{
-				realtime.EventHeartbeat,
-				nil,
+				EventType: realtime.EventHeartbeat,
+				Payload:   nil,
 			}
 		}
 	}
 }
 
+// writePump drains the client's Send channel and writes each event to the
+// WebSocket connection. Exits when the context is cancelled or the channel
+// is closed.
 func writePump(ctx context.Context, client *realtime.Client) {
 	for {
 		select {
@@ -113,18 +114,23 @@ func writePump(ctx context.Context, client *realtime.Client) {
 			}
 
 			writeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			_ = wsjson.Write(writeCtx, client.Conn, event)
+			err := wsjson.Write(writeCtx, client.Conn, event)
 			cancel()
+			if err != nil {
+				logger.App.Printf("[WEBSOCKET] error=write_failed user_id=%d event=%s err=%v", client.User.ID, event.EventType, err)
+				return
+			}
 		}
 	}
 }
 
+// readPump reads incoming events from the WebSocket connection and dispatches
+// them to handleIncomingEvents. Exits on read error or context cancellation.
 func readPump(ctx context.Context, cancelCtx context.CancelFunc, hub *realtime.Hub, client *realtime.Client) {
 	defer cancelCtx()
 	defer func() {
-		r := recover()
-		if r != nil {
-			logger.App.Printf("[WEBSOCKET] error=readpump_panic client_id=%d panic=%v", client.User.ID, r)
+		if r := recover(); r != nil {
+			logger.App.Printf("[WEBSOCKET] error=readpump_panic user_id=%d panic=%v", client.User.ID, r)
 		}
 	}()
 
@@ -132,10 +138,179 @@ func readPump(ctx context.Context, cancelCtx context.CancelFunc, hub *realtime.H
 		var event realtime.Event
 		err := wsjson.Read(ctx, client.Conn, &event)
 		if err != nil {
-			logger.App.Printf("[WEBSOCKET] error=read_failed client_id=%d err=%v", client.User.ID, err)
+			// Log only unexpected errors — normal closure / context cancel are expected.
+			if ctx.Err() == nil {
+				logger.App.Printf("[WEBSOCKET] error=read_failed user_id=%d err=%v", client.User.ID, err)
+			}
 			return
 		}
-		
-		// TODO: Handle incoming event
+
+		handleIncomingEvents(hub, client, event)
 	}
+}
+
+// handleIncomingEvents dispatches a parsed client event to the correct handler.
+func handleIncomingEvents(hub *realtime.Hub, client *realtime.Client, event realtime.Event) {
+	payload, ok := event.Payload.(map[string]any)
+	if !ok {
+		hub.SendError(client.User.ID, "invalid event payload format")
+		return
+	}
+
+	switch event.EventType {
+
+	// ── EventMessage ────────────────────────────────────────────────────────────
+	case realtime.EventMessage:
+		privateId, ok := extractInt64(payload, "private_id")
+		if !ok {
+			hub.SendError(client.User.ID, "private_id is missing or not a number")
+			return
+		}
+
+		receiverId, ok := extractInt64(payload, "receiver_id")
+		if !ok {
+			hub.SendError(client.User.ID, "receiver_id is missing or not a number")
+			return
+		}
+
+		messageTypeAny, ok := payload["message_type"]
+		if !ok {
+			hub.SendError(client.User.ID, "message_type is missing")
+			return
+		}
+		messageType, ok := messageTypeAny.(string)
+		if !ok {
+			hub.SendError(client.User.ID, "message_type must be a string")
+			return
+		}
+
+		msgBytes, _ := json.Marshal(payload)
+		var msg models.Message
+		if err := json.Unmarshal(msgBytes, &msg); err != nil {
+			hub.SendError(client.User.ID, "invalid message format")
+			return
+		}
+
+		msg.FromID = client.User.ID
+		msg.PrivateID = privateId
+		msg.MessageType = messageType
+		msg.CreatedAt = time.Now()
+
+		if err := models.CreateMessage(&msg); err != nil {
+			logger.App.Printf("[WEBSOCKET] error=create_message user_id=%d err=%v", client.User.ID, err)
+			hub.SendError(client.User.ID, "failed to save message")
+			return
+		}
+
+		hub.SendEventToUserIds([]int64{msg.FromID, receiverId}, msg.FromID, realtime.EventMessage, map[string]any{
+			"message": msg,
+		})
+
+	// ── EventDelivered ───────────────────────────────────────────────────────────
+	case realtime.EventDelivered:
+		msgId, ok := extractInt64(payload, "message_id")
+		if !ok {
+			hub.SendError(client.User.ID, "message_id is missing or not a number")
+			return
+		}
+
+		msg, err := models.GetMessageByID(msgId)
+		if err != nil {
+			hub.SendError(client.User.ID, "message not found")
+			return
+		}
+
+		if msg.FromID == client.User.ID {
+			hub.SendError(client.User.ID, "cannot mark own message as delivered")
+			return
+		}
+
+		if err := models.MarkMessageAsDelivered(msgId); err != nil {
+			logger.App.Printf("[WEBSOCKET] error=mark_delivered user_id=%d msg_id=%d err=%v", client.User.ID, msgId, err)
+			hub.SendError(client.User.ID, "failed to mark message as delivered")
+			return
+		}
+
+		hub.SendEventToUserIds([]int64{msg.FromID}, client.User.ID, realtime.EventDelivered, map[string]any{
+			"message_id": msgId,
+			"to_id":      client.User.ID,
+		})
+
+	// ── EventRead ────────────────────────────────────────────────────────────────
+	case realtime.EventRead:
+		msgId, ok := extractInt64(payload, "message_id")
+		if !ok {
+			hub.SendError(client.User.ID, "message_id is missing or not a number")
+			return
+		}
+
+		msg, err := models.GetMessageByID(msgId)
+		if err != nil {
+			hub.SendError(client.User.ID, "message not found")
+			return
+		}
+
+		if msg.FromID == client.User.ID {
+			hub.SendError(client.User.ID, "cannot mark own message as read")
+			return
+		}
+
+		if err := models.MarkMessageAsRead(msgId); err != nil {
+			logger.App.Printf("[WEBSOCKET] error=mark_read user_id=%d msg_id=%d err=%v", client.User.ID, msgId, err)
+			hub.SendError(client.User.ID, "failed to mark message as read")
+			return
+		}
+
+		hub.SendEventToUserIds([]int64{msg.FromID}, client.User.ID, realtime.EventRead, map[string]any{
+			"message_id": msgId,
+		})
+
+	// ── EventTyping ──────────────────────────────────────────────────────────────
+	case realtime.EventTyping:
+		privateId, ok := extractInt64(payload, "private_id")
+		if !ok {
+			hub.SendError(client.User.ID, "private_id is missing or not a number")
+			return
+		}
+
+		receiverId, ok := extractInt64(payload, "receiver_id")
+		if !ok {
+			hub.SendError(client.User.ID, "receiver_id is missing or not a number")
+			return
+		}
+
+		isTypingAny, ok := payload["is_typing"]
+		if !ok {
+			hub.SendError(client.User.ID, "is_typing is missing")
+			return
+		}
+		isTyping, ok := isTypingAny.(bool)
+		if !ok {
+			hub.SendError(client.User.ID, "is_typing must be a boolean")
+			return
+		}
+
+		hub.SendEventToUserIds([]int64{receiverId}, client.User.ID, realtime.EventTyping, map[string]any{
+			"private_id": privateId,
+			"user_id":    client.User.ID,
+			"is_typing":  isTyping,
+		})
+
+	default:
+		hub.SendError(client.User.ID, "unknown event type: "+string(event.EventType))
+	}
+}
+
+// extractInt64 safely pulls a numeric value from a JSON-decoded map and
+// converts it to int64. JSON numbers decode as float64, so this handles that.
+func extractInt64(payload map[string]any, key string) (int64, bool) {
+	v, ok := payload[key]
+	if !ok {
+		return 0, false
+	}
+	f, ok := v.(float64)
+	if !ok {
+		return 0, false
+	}
+	return int64(f), true
 }

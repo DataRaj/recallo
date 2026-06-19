@@ -7,7 +7,7 @@ import (
 
 type APIResponse struct {
 	Status  int    `json:"status"`
-	Succss  bool   `json:"success"`
+	Success bool   `json:"success"`
 	Message string `json:"message"`
 	Data    any    `json:"data"`
 }
@@ -15,16 +15,17 @@ type APIResponse struct {
 func JSON(w http.ResponseWriter, status int, success bool, message string, data any) {
 	resp := APIResponse{
 		Status:  status,
-		Succss:  success,
+		Success: success,
 		Message: message,
 		Data:    data,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(status) // ← was hardcoded http.StatusOK — now uses the actual status
 
-	err := json.NewEncoder(w).Encode(resp)
-	if err != nil {
-		http.Error(w, `{"status":500, "success":false, "message": "Internal server error"}`, http.StatusInternalServerError)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		// Headers already sent; log is the only option here.
+		http.Error(w, `{"status":500,"success":false,"message":"Internal server error"}`, http.StatusInternalServerError)
 	}
 }
+
