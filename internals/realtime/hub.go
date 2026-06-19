@@ -1,9 +1,9 @@
 package realtime
 
 import (
-	"log"
 	"sync"
 
+	"recallo/internals/logger"
 	"recallo/internals/models"
 )
 
@@ -94,7 +94,7 @@ func (h *Hub) RegisterClientConnection(client *Client) {
 		// Senders see the ✓✓ state the next time they load the conversation via REST.
 		go func() {
 			if err := models.MarkAllIncomingMessagesAsDelivered(client.User.ID); err != nil {
-				log.Printf("[HUB] failed to mark messages delivered for user %d: %v", client.User.ID, err)
+				logger.App.Printf("[HUB] error=mark_delivered_failed user_id=%d err=%v", client.User.ID, err)
 			}
 		}()
 	}
@@ -173,7 +173,7 @@ func (h *Hub) SendError(clientId int64, errorMessage string) {
 func (h *Hub) Shutdown() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	log.Println("[HUB] Shutting down hub, notifying clients...")
+	logger.App.Printf("[HUB] shutting down — notifying all connected clients")
 	for _, clients := range h.Clients {
 		for client := range clients {
 			client.SendEvent(Event{
@@ -184,5 +184,5 @@ func (h *Hub) Shutdown() {
 		}
 	}
 	h.Clients = make(map[int64]map[*Client]struct{})
-	log.Println("[HUB] Hub shutdown complete.")
+	logger.App.Printf("[HUB] shutdown complete")
 }

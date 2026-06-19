@@ -44,12 +44,12 @@ func HandleEmailLogin(w http.ResponseWriter, r *http.Request) {
 
 	user, err := models.GetUserByEmail(req.Email)
 	if err != nil || user == nil {
-		logger.App.Printf("[LOGIN] error=user_not_found email=%q platform=%s remote=%s", req.Email, platform, r.RemoteAddr)
+		logger.App.Printf("[LOGIN] error=user_not_found email=%q platform=%s remote=%s err=%v", req.Email, platform, r.RemoteAddr, err)
 		utils.JSON(w, http.StatusUnauthorized, false, "invalid email or password", nil)
 		return
 	}
 
-	if err := utils.CheckHashedPassword(req.Password, user.Password); err != nil {
+	if err := utils.CheckHashedPassword(user.Password, req.Password); err != nil {
 		logger.App.Printf("[LOGIN] error=wrong_password user_id=%d email=%q platform=%s remote=%s", user.ID, req.Email, platform, r.RemoteAddr)
 		utils.JSON(w, http.StatusUnauthorized, false, "invalid email or password", nil)
 		return

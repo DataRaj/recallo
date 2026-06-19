@@ -43,7 +43,7 @@ func main() {
 	defer hub.Shutdown()
 
 	// Build route handler (CORS already applied inside RegisterRoutes).
-	routeHandler := routes.RegisterRoutes()
+	routeHandler := routes.RegisterRoutes(hub)
 
 	// Apply logging middleware on top of the route handler.
 	handler := middleware.Loggingmiddleware(routeHandler)
@@ -60,27 +60,36 @@ func main() {
 	signal.Notify(shutdownCh, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		log.Printf("[recallo] server starting on %s  [env=%s]", cfg.HTTPServer.Address, cfg.Env)
-		log.Println("  GET  /api/v1/healthcheck")
-		log.Println("  POST /api/v1/auth/register")
-		log.Println("  POST /api/v1/auth/login")
-		log.Println("  POST /api/v1/auth/refresh")
-		log.Println("  POST /api/v1/auth/logout   [protected]")
-		log.Println("  POST /api/v1/auth/refresh-session   [protected]")
+		logger.App.Printf("[startup] server listening on %s  env=%s", cfg.HTTPServer.Address, cfg.Env)
+		logger.App.Printf("[startup] registered routes:")
+		logger.App.Printf("  GET  /api/v1/healthcheck")
+		logger.App.Printf("  POST /api/v1/auth/register")
+		logger.App.Printf("  POST /api/v1/auth/login")
+		logger.App.Printf("  POST /api/v1/auth/refresh-session")
+		logger.App.Printf("  POST /api/v1/auth/logout              [protected]")
+		logger.App.Printf("  GET  /api/v1/auth/current-user        [protected]")
+		logger.App.Printf("  GET  /api/v1/users/{id}               [protected]")
+		logger.App.Printf("  GET  /api/v1/conversations            [protected]")
+		logger.App.Printf("  POST /api/v1/conversation/private/create             [protected]")
+		logger.App.Printf("  GET  /api/v1/conversation/private/{private_id}       [protected]")
+		logger.App.Printf("  GET  /api/v1/conversation/private/{private_id}/messages [protected]")
+		logger.App.Printf("  POST /api/v1/files/{private_id}       [protected]")
+		logger.App.Printf("  GET  /api/v1/files/                   [protected]")
+		logger.App.Printf("  GET  /api/v1/ws                       [websocket]")
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("[recallo] server error: %v", err)
+			logger.App.Printf("[server] fatal err=%v", err)
 		}
 	}()
 
 	sig := <-shutdownCh
-	log.Printf("[recallo] signal received: %v — initiating graceful shutdown", sig)
+	logger.App.Printf("[server] signal received: %v — initiating graceful shutdown", sig)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		log.Printf("[recallo] shutdown error: %v", err)
+		logger.App.Printf("[server] shutdown error: %v", err)
 	} else {
-		log.Println("[recallo] server shut down cleanly")
+		logger.App.Printf("[server] shut down cleanly")
 	}
 }
