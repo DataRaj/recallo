@@ -5,32 +5,44 @@ import (
 
 	"recallo/internals/handlers"
 	"recallo/internals/middleware"
+	"recallo/internals/realtime"
 )
 
 // RegisterRoutes builds and returns the root HTTP mux with all application
-// routes registered. The mux is already wrapped with CORS middleware here so
-// that every route benefits from it automatically.
-func RegisterRoutes() http.Handler {
+// routes registered. The mux is wrapped with CORS middleware so every route
+// benefits from it automatically.
+func RegisterRoutes(hub *realtime.Hub) http.Handler {
 	mux := http.NewServeMux()
 
+	// ── Health ───────────────────────────────────────────────────────────────
 	mux.HandleFunc("GET /api/v1/healthcheck", Healthcheck)
+
+	// ── Auth (public) ────────────────────────────────────────────────────────
 	mux.HandleFunc("POST /api/v1/auth/register", handleUserRegistration)
 	mux.HandleFunc("POST /api/v1/auth/login", handlers.HandleEmailLogin)
 	mux.HandleFunc("POST /api/v1/auth/refresh-session", handlers.HandleRefreshSession)
 
-	// ── Protected (require valid JWT) ─────────────────────────────────────────
-	mux.Handle("POST /api/v1/auth/logout",
-		middleware.Authenticate(http.HandlerFunc(handlers.HandleLogout)))
+	// ── Auth (protected) ─────────────────────────────────────────────────────
+	mux.Handle("POST /api/v1/auth/logout", middleware.Authenticate(http.HandlerFunc(handlers.HandleLogout)))
+	mux.Handle("GET /api/v1/auth/current-user", middleware.Authenticate(http.HandlerFunc(handlers.HandleGetCurrentUser)))
 
-	mux.Handle("GET /api/v1/auth/current-user",
-		middleware.Authenticate(http.HandlerFunc(handlers.HandleGetCurrentUser)))
-
+	// ── Users (protected) ────────────────────────────────────────────────────
 	mux.Handle("GET /api/v1/users/{id}", middleware.Authenticate(http.HandlerFunc(handlers.GetUserByID)))
 
-	mux.Handle("GET /api/v1/private/{private}", middleware.Authenticate(http.HandlerFunc(handlers.HandleGetPrivate)))
-	// Wrap entire mux with CORS so preflight OPTIONS requests are handled globally.
+	// ── Conversations (protected) ────────────────────────────────────────────
+	mux.Handle("GET /api/v1/conversations", middleware.Authenticate(http.HandlerFunc(handlers.HandleGetConversations)))
+	mux.Handle("POST /api/v1/conversation/private/create", middleware.Authenticate(http.HandlerFunc(handlers.HandleJoinPrivate)))
+	mux.Handle("GET /api/v1/conversation/private/{private_id}", middleware.Authenticate(http.HandlerFunc(handlers.HandleGetPrivate)))
+	mux.Handle("GET /api/v1/conversation/private/{private_id}/messages", middleware.Authenticate(http.HandlerFunc(handlers.HandleGetPrivateMessages)))
 
+	// ── Files (protected) ────────────────────────────────────────────────────
 	mux.Handle("POST /api/v1/files/{private_id}", middleware.Authenticate(http.HandlerFunc(handlers.HandleFileUpload)))
 	mux.Handle("GET /api/v1/files/", middleware.AuthenticateHandler(handlers.HandleGetFile()))
+
+	// ── WebSocket ────────────────────────────────────────────────────────────
+	mux.HandleFunc("GET /api/v1/ws", func(w http.ResponseWriter, r *http.Request) {
+		HandleWebSocketConnection(hub, w, r)
+	})
+
 	return middleware.CORSMiddleware(mux)
 }
