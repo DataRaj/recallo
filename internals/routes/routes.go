@@ -22,6 +22,10 @@ func RegisterRoutes(hub *realtime.Hub) http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/login", handlers.HandleEmailLogin)
 	mux.HandleFunc("POST /api/v1/auth/refresh-session", handlers.HandleRefreshSession)
 
+	// ── OAuth (public) ───────────────────────────────────────────────────────
+	mux.HandleFunc("GET /api/v1/auth/github", handlers.HandleBeginGithubAuth)
+	mux.HandleFunc("GET /api/v1/auth/github/callback", handlers.HandleGithubAuthCallback)
+
 	// ── Auth (protected) ─────────────────────────────────────────────────────
 	mux.Handle("POST /api/v1/auth/logout", middleware.Authenticate(http.HandlerFunc(handlers.HandleLogout)))
 	mux.Handle("GET /api/v1/auth/current-user", middleware.Authenticate(http.HandlerFunc(handlers.HandleGetCurrentUser)))

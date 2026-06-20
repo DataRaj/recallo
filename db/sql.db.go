@@ -107,6 +107,18 @@ func InitDB(dsn string, cfg Config) error {
         FOREIGN KEY(from_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY(private_id) REFERENCES privates(id) ON DELETE CASCADE
 		);`,
+
+		// OAuth Connections
+		`CREATE TABLE IF NOT EXISTS oauth_connections (
+        user_id INTEGER PRIMARY KEY,
+        provider TEXT NOT NULL,
+        provider_user_id TEXT NOT NULL,
+        encrypted_token bytea NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE(provider, provider_user_id)
+		);`,
 	}
 	for _, table := range tables {
 		_, err := db.Exec(table)
