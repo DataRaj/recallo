@@ -18,6 +18,11 @@ type Config struct {
 	Env          string `env:"ENV"            env-default:"dev"`
 	DatabaseURL  string `env:"DATABASE_URL"   env-default:""`
 	JWTSecretKey string `env:"JWT_SECRET_KEY" env-default:""`
+
+	GithubClientID     string `env:"GITHUB_CLIENT_ID"     env-default:""`
+	GithubClientSecret string `env:"GITHUB_CLIENT_SECRET" env-default:""`
+	GithubOAuthRedirectURL string `env:"GITHUB_OAUTH_REDIRECT_URL" env-default:""`
+
 	HTTPServer
 }
 
@@ -48,6 +53,16 @@ func LoadConfig() *Config {
 	}
 	if cfg.JWTSecretKey == "" {
 		log.Fatal("[config] JWT_SECRET_KEY must not be empty")
+	}
+
+	if cfg.GithubClientID == "" {
+		log.Fatal("[config] GITHUB_CLIENT_ID must not be empty")
+	}
+	if cfg.GithubClientSecret == "" {
+		log.Fatal("[config] GITHUB_CLIENT_SECRET must not be empty")
+	}
+	if cfg.GithubOAuthRedirectURL == "" {
+		log.Fatal("[config] GITHUB_OAUTH_REDIRECT_URL must not be empty")
 	}
 
 	log.Printf("[config] loaded env=%s addr=%s", cfg.Env, cfg.Address)
