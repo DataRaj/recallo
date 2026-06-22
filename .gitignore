@@ -7,6 +7,7 @@ config/
 
 # Keep the example template so new contributors can onboard
 !env.example
+dev.env
 
 # ── Build Artifacts ───────────────────────────────────────────────────────────
 # Compiled binaries (old name + new name)
