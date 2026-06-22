@@ -11,6 +11,7 @@ import (
 
 	"recallo/db"
 	"recallo/internals/configs"
+	"recallo/internals/handlers"
 	"recallo/internals/logger"
 	"recallo/internals/middleware"
 	"recallo/internals/realtime"
@@ -32,6 +33,9 @@ func main() {
 
 	// Initialise JWT signing key so all handlers can sign/verify tokens.
 	utils.InitJWT(cfg.JWTSecretKey)
+
+	// Initialise OAuth configs.
+	handlers.InitOAuth(cfg.GithubClientID, cfg.GithubClientSecret, cfg.GithubOAuthRedirectURL)
 
 	// Initialise PostgreSQL connection pool and run schema migrations.
 	if err := db.InitDB(cfg.DatabaseURL, db.DefaultConfig()); err != nil {

@@ -6,7 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
-	"os"
+	// "os"
 	"strconv"
 	"time"
 
@@ -19,16 +19,20 @@ import (
 )
 
 var (
-	// In production, these should be loaded in a config struct/init function
+	githubOAuthConfig *oauth2.Config
+	frontendURL       = "http://localhost:3000"
+)
+
+// InitOAuth initializes the GitHub OAuth configuration
+func InitOAuth(clientID, clientSecret, redirectURL string) {
 	githubOAuthConfig = &oauth2.Config{
-		ClientID:     os.Getenv("GITHUB_CLIENT_ID"),
-		ClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
 		Scopes:       []string{"user:email", "read:user"},
 		Endpoint:     github.Endpoint,
-		RedirectURL:  "http://localhost:8080/api/v1/auth/github/callback",
+		RedirectURL:  redirectURL,
 	}
-	frontendURL = "http://localhost:3000"
-)
+}
 
 func generateStateOauthCookie(w http.ResponseWriter) string {
 	b := make([]byte, 32)
