@@ -1,4 +1,4 @@
-.PHONY: build run dev test tidy lint clean
+.PHONY: build run dev test tidy lint clean sqlc migrateup migratedown new_migration
 
 ## Build the production binary into bin/
 build:
@@ -24,6 +24,22 @@ tidy:
 ## Run go vet + staticcheck linters
 lint:
 	@go vet ./...
+
+## Generate sqlc models and queries
+sqlc:
+	@sqlc generate
+
+## Create a new migration file (e.g., make new_migration name=add_users_table)
+new_migration:
+	@migrate create -ext sql -dir db/migrations -seq $(name)
+
+## Apply all up migrations
+migrateup:
+	@migrate -path db/migrations -database "$$DATABASE_URL" -verbose up
+
+## Revert all down migrations
+migratedown:
+	@migrate -path db/migrations -database "$$DATABASE_URL" -verbose down
 
 ## Remove compiled artifacts
 clean:
