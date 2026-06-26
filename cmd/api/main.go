@@ -10,14 +10,17 @@ import (
 	"time"
 
 	"recallo/db"
+	"recallo/internals/cache"
 	"recallo/internals/configs"
 	"recallo/internals/handlers"
+	"recallo/internals/jobs"
 	livekit "recallo/internals/livekit"
 	"recallo/internals/logger"
 	"recallo/internals/middleware"
 	"recallo/internals/realtime"
 	"recallo/internals/rooms"
 	"recallo/internals/routes"
+	"recallo/internals/transcripts"
 	"recallo/internals/utils"
 	"recallo/internals/webhooks"
 )
@@ -45,6 +48,19 @@ func main() {
 	}
 	defer db.CloseDBConnection()
 
+	// ── Redis ─────────────────────────────────────────────────────────────────
+	// Passed explicitly to every component that needs it — no global.
+	rdb, err := cache.Connect(cfg.RedisURL)
+	if err != nil {
+		log.Fatalf("[startup] failed to connect to Redis: %v", err)
+	}
+	defer rdb.Close()
+	logger.App.Printf("[startup] Redis connected url=%s", cfg.RedisURL)
+
+	// ── Job client ────────────────────────────────────────────────────────────
+	// Dual-write: Postgres (durable) + Redis LIST (fast BRPOP path).
+	jobClient := jobs.NewClient(db.DB, rdb)
+
 	// ── LiveKit service ───────────────────────────────────────────────────────
 	// NewService constructs the gRPC RoomServiceClient + token access key.
 	// Passed explicitly to every component that needs LiveKit access —
@@ -62,8 +78,23 @@ func main() {
 	roomsHandler := rooms.NewHandler(roomsSvc)
 
 	// ── Webhook handler ───────────────────────────────────────────────────────
-	// Needs the webhook secret (separate from API secret) for HMAC validation.
-	webhookHandler := webhooks.NewHandler(cfg.LiveKit.APIKey, cfg.LiveKit.WebhookSecret)
+	// Receives jobClient so egress_ended can atomically enqueue a transcription job.
+	webhookHandler := webhooks.NewHandler(cfg.LiveKit.APIKey, cfg.LiveKit.WebhookSecret, jobClient)
+
+	// ── Worker pool ───────────────────────────────────────────────────────────
+	// Transcript service: post-session Deepgram batch pipeline.
+	// Presigns DO Spaces GET URLs; Deepgram fetches the file directly.
+	transcriptSvc := transcripts.NewService(db.DB, cfg.Deepgram, cfg.Spaces, jobClient)
+
+	workerPool := jobs.NewWorkerPool(db.DB, rdb)
+	workerPool.Register(jobs.TypeTranscribe, transcriptSvc.Handle)
+	// TODO: register summarySvc.Handle when internals/summaries is implemented:
+	// workerPool.Register(jobs.TypeSummarize, summarySvc.Handle)
+	workerCtx, stopWorkers := context.WithCancel(context.Background())
+	go workerPool.Start(workerCtx, map[jobs.JobType]int{
+		jobs.TypeTranscribe: 3,
+		jobs.TypeSummarize:  2,
+	})
 
 	// ── WebSocket hub ─────────────────────────────────────────────────────────
 	hub := realtime.NewHub()
@@ -126,6 +157,8 @@ func main() {
 	sig := <-shutdownCh
 	logger.App.Printf("[server] signal received: %v — initiating graceful shutdown", sig)
 
+	// Stop workers before draining HTTP: no new jobs while server is shutting down.
+	stopWorkers()
 	// Stop the session enforcer first so it doesn't trigger new EndRoom calls
 	// while the HTTP server is draining.
 	stopEnforcer()

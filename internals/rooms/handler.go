@@ -26,11 +26,12 @@ func NewHandler(svc *Service) *Handler {
 // Called from the top-level routes.RegisterRoutes.
 //
 // Routes:
-//   POST   /api/v1/rooms                    → CreateGuestRoom   (public — guest tier)
-//   GET    /api/v1/rooms/{id}               → GetRoom
-//   DELETE /api/v1/rooms/{id}               → EndRoom           (host only)
-//   GET    /api/v1/rooms/{id}/token         → IssueGuestToken
-//   POST   /api/v1/rooms/{id}/extend        → ExtendGuestSession (guest host only)
+//
+//	POST   /api/v1/rooms                    → CreateGuestRoom   (public — guest tier)
+//	GET    /api/v1/rooms/{id}               → GetRoom
+//	DELETE /api/v1/rooms/{id}               → EndRoom           (host only)
+//	GET    /api/v1/rooms/{id}/token         → IssueGuestToken
+//	POST   /api/v1/rooms/{id}/extend        → ExtendGuestSession (guest host only)
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/rooms", h.handleCreateGuestRoom)
 	mux.HandleFunc("GET /api/v1/rooms/{id}", h.handleGetRoom)
@@ -50,8 +51,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 // No auth middleware is applied to this route (guest tier is public).
 func (h *Handler) handleCreateGuestRoom(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Title       string `json:"title"`
-		HostGuestID string `json:"host_guest_id"`
+		Title  string `json:"title"`
+		HostID string `json:"host_guest_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -61,12 +62,12 @@ func (h *Handler) handleCreateGuestRoom(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "title is required")
 		return
 	}
-	if strings.TrimSpace(body.HostGuestID) == "" {
+	if strings.TrimSpace(body.HostID) == "" {
 		writeError(w, http.StatusBadRequest, "host_guest_id is required")
 		return
 	}
 
-	room, err := h.svc.CreateGuestRoom(r.Context(), body.HostGuestID, body.Title)
+	room, err := h.svc.CreateGuestRoom(r.Context(), body.HostID, body.Title)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -120,9 +121,10 @@ func (h *Handler) handleEndRoom(w http.ResponseWriter, r *http.Request) {
 // handleIssueGuestToken — GET /api/v1/rooms/{id}/token
 //
 // Query params:
-//   guest_id     = participant's unique identity (UUID)
-//   display_name = human-readable name shown in participant list
-//   is_host      = "true" if this participant created the room
+//
+//	guest_id     = participant's unique identity (UUID)
+//	display_name = human-readable name shown in participant list
+//	is_host      = "true" if this participant created the room
 //
 // Response 200: {"token": "<livekit-jwt>", "livekit_host": "wss://..."}
 //
