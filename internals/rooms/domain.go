@@ -2,8 +2,9 @@
 // session enforcement, and teardown.
 //
 // Dependency direction (Kennedy's rule):
-//   rooms → livekit.Service (via the LiveKitService interface declared HERE)
-//   rooms ← handlers (routes call into this package's Service)
+//
+//	rooms → livekit.Service (via the LiveKitService interface declared HERE)
+//	rooms ← handlers (routes call into this package's Service)
 //
 // The LiveKitService interface is declared in this package (the consumer),
 // not in the livekit package (the provider). This means:
@@ -49,21 +50,17 @@ type LiveKitService interface {
 // Maps 1:1 with the rooms DB table row.
 type Room struct {
 	ID              int64      `json:"id"`
-	HostGuestID     string     `json:"host_guest_id"`     // guest UUID of the room creator
+	HostGuestID     string     `json:"host_guest_id`      // guest UUID of the room creator
 	LiveKitRoomName string     `json:"livekit_room_name"` // stable LiveKit identifier
 	Title           string     `json:"title"`
 	Status          RoomStatus `json:"status"`
 	Tier            RoomTier   `json:"tier"`
-	ExtendUsed      bool       `json:"extend_used"`       // true after guest has used their one extension
+	ExtendUsed      bool       `json:"extend_used"` // true after guest has used their one extension
 	StartedAt       *time.Time `json:"started_at,omitempty"`
 	EndedAt         *time.Time `json:"ended_at,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
 }
 
-// RoomStatus tracks the lifecycle state of a room.
-// Transitions are one-directional: draft → live → ended.
-// The authoritative driver of these transitions is the LiveKit webhook,
-// not the API call that initiates the transition.
 type RoomStatus string
 
 const (
@@ -72,15 +69,13 @@ const (
 	RoomStatusEnded RoomStatus = "ended" // room_finished webhook received
 )
 
-// RoomTier identifies which feature/limit profile applies to this room.
-// For Phase 1 (non-login tier) only Guest exists.
 type RoomTier string
 
 const (
-	// TierGuest — non-login users. Limits: 4 participants, 30-min session, ≤720p.
 	TierGuest RoomTier = "guest"
 
-	// TierPro — authenticated paid users (future). No participant cap, HD quality.
+	TierStandard = "standard"
+
 	TierPro RoomTier = "pro"
 )
 

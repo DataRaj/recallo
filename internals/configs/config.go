@@ -63,28 +63,50 @@ type GuestTierConfig struct {
 	MaxVideoQuality string `env:"GUEST_MAX_VIDEO_QUALITY" env-default:"medium"`
 }
 
+// DeepgramConfig groups all Deepgram API credentials and tuning parameters.
+type DeepgramConfig struct {
+	APIKey   string `env:"DEEPGRAM_API_KEY"    env-default:""`
+	Model    string `env:"DEEPGRAM_MODEL"      env-default:"nova-3"`
+	Language string `env:"DEEPGRAM_LANGUAGE"   env-default:"en"`
+	// TimeoutSec is the HTTP client timeout for batch transcription requests.
+	// Large files (1hr+) can take 30-60s to return from Deepgram.
+	TimeoutSec int `env:"DEEPGRAM_TIMEOUT_SEC" env-default:"120"`
+}
+
+// SpacesConfig groups DigitalOcean Spaces (S3-compatible) credentials.
+// Used by the transcripts package to presign GET URLs for Deepgram fetch.
+type SpacesConfig struct {
+	Endpoint  string `env:"SPACES_ENDPOINT"   env-default:""`  // e.g. https://nyc3.digitaloceanspaces.com
+	Bucket    string `env:"SPACES_BUCKET"     env-default:""`
+	AccessKey string `env:"SPACES_ACCESS_KEY" env-default:""`
+	SecretKey string `env:"SPACES_SECRET_KEY" env-default:""`
+}
+
 // Config is the full application configuration loaded from an .env file.
 // All sub-configs are embedded as named fields, not anonymous embeds, so callers
 // access them as cfg.LiveKit.APIKey — unambiguous and greppable.
 type Config struct {
 	Env         string `env:"ENV"          env-default:"dev"`
 	DatabaseURL string `env:"DATABASE_URL" env-default:""`
+	RedisURL    string `env:"REDIS_URL"    env-default:"redis://127.0.0.1:6379/0"`
 
 	JWTSecretKey string `env:"JWT_SECRET_KEY" env-default:""`
 
-	GithubClientID       string `env:"GITHUB_CLIENT_ID"          env-default:""`
-	GithubClientSecret   string `env:"GITHUB_CLIENT_SECRET"      env-default:""`
+	GithubClientID         string `env:"GITHUB_CLIENT_ID"          env-default:""`
+	GithubClientSecret     string `env:"GITHUB_CLIENT_SECRET"      env-default:""`
 	GithubOAuthRedirectURL string `env:"GITHUB_OAUTH_REDIRECT_URL" env-default:""`
-
-	// DeepgramAPIKey is kept at root level because it belongs to the transcription
-	// pipeline, which is a cross-cutting concern not tied to a single sub-system.
-	DeepgramAPIKey string `env:"DEEPGRAM_API_KEY" env-default:""`
 
 	// LiveKit groups all credentials and endpoint config for the LiveKit SFU.
 	LiveKit LiveKitConfig
 
 	// GuestTier groups all rate/quality limits for the non-login (guest) user tier.
 	GuestTier GuestTierConfig
+
+	// Deepgram groups STT API config.
+	Deepgram DeepgramConfig
+
+	// Spaces groups DigitalOcean Spaces credentials for recording storage.
+	Spaces SpacesConfig
 
 	HTTPServer
 }

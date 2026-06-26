@@ -207,6 +207,34 @@ func (s *Service) RemoveParticipant(ctx context.Context, roomName, identity stri
 	return nil
 }
 
+// RoomMetadata is the JSON blob injected into the active WebRTC signaling channel
+// via UpdateRoomMetadata. All connected participants receive a RoomMetadataChanged
+// event automatically — no polling required on the frontend.
+type RoomMetadata struct {
+	Tier         string            `json:"tier"`
+	ActivePlugin string            `json:"active_plugin,omitempty"`
+	CustomState  map[string]string `json:"custom_state,omitempty"`
+}
+
+// UpdateRoomMetadata patches the live metadata on an active LiveKit room.
+// LiveKit broadcasts a RoomMetadataChanged event to every connected participant.
+// Use this to propagate plugin state, tier changes, or custom signaling data
+// without requiring a separate WebSocket message.
+func (s *Service) UpdateRoomMetadata(ctx context.Context, roomName string, meta RoomMetadata) error {
+	payload, err := json.Marshal(meta)
+	if err != nil {
+		return fmt.Errorf("livekit.Service.UpdateRoomMetadata: marshal: %w", err)
+	}
+	req := &lkproto.UpdateRoomMetadataRequest{
+		Room:     roomName,
+		Metadata: string(payload),
+	}
+	if _, err := s.roomSvc.UpdateRoomMetadata(ctx, req); err != nil {
+		return fmt.Errorf("livekit.Service.UpdateRoomMetadata: %w", err)
+	}
+	return nil
+}
+
 // ListParticipantCount returns the number of live participants.
 // Satisfies the rooms.LiveKitService interface — rooms domain only needs the count.
 // Returns 0 (no error) when the room doesn't exist in LiveKit yet (draft state).

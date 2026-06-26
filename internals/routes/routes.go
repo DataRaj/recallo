@@ -30,6 +30,7 @@ func RegisterRoutes(
 	mux.HandleFunc("POST /api/v1/auth/register", handleUserRegistration)
 	mux.HandleFunc("POST /api/v1/auth/login", handlers.HandleEmailLogin)
 	mux.HandleFunc("POST /api/v1/auth/refresh-session", handlers.HandleRefreshSession)
+	mux.HandleFunc("POST /api/v1/auth/refresh", handlers.HandleRefreshSession) // BFF proxy alias
 
 	// ── OAuth (public) ────────────────────────────────────────────────────────
 	mux.HandleFunc("GET /api/v1/auth/github", handlers.HandleBeginGithubAuth)

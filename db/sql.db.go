@@ -156,6 +156,55 @@ func InitDB(dsn string, cfg Config) error {
         payload              JSONB       NOT NULL,
         received_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);`,
+
+		// Recordings — tracks egress lifecycle, updated via webhooks.
+		// file_url is null until egress_ended confirms the upload to Spaces.
+		`CREATE TABLE IF NOT EXISTS recordings (
+        id                   BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        room_livekit_name    TEXT        NOT NULL,
+        egress_id            TEXT        NOT NULL UNIQUE,
+        status               TEXT        NOT NULL DEFAULT 'recording'
+                             CHECK (status IN ('recording', 'completed', 'failed')),
+        file_url             TEXT,
+        file_size_bytes      BIGINT,
+        duration_sec         INTEGER,
+        created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        completed_at         TIMESTAMPTZ
+		);`,
+
+		// Job Queue — Postgres durable mirror of the Redis ready queue.
+		// Redis is the fast path; this table is the crash-recovery safety net.
+		// On startup / reconciler tick, rows WHERE status='pending' AND
+		// next_run_at <= now() that are absent from Redis get re-pushed.
+		`CREATE TABLE IF NOT EXISTS job_queue (
+        id                   TEXT        PRIMARY KEY,
+        type                 TEXT        NOT NULL
+                             CHECK (type IN ('transcribe', 'summarize')),
+        payload              JSONB       NOT NULL,
+        status               TEXT        NOT NULL DEFAULT 'pending'
+                             CHECK (status IN ('pending', 'running', 'completed', 'failed')),
+        attempts             INTEGER     NOT NULL DEFAULT 0,
+        max_retries          INTEGER     NOT NULL DEFAULT 5,
+        created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        next_run_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);`,
+
+		// Transcripts — stores the final Deepgram word-level output per recording.
+		// words_json holds the full []WordResult array for downstream summarisation.
+		// confidence is the utterance-level mean from Deepgram's response.
+		`CREATE TABLE IF NOT EXISTS transcripts (
+        id                   BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        room_livekit_name    TEXT        NOT NULL,
+        recording_id         BIGINT      NOT NULL REFERENCES recordings(id),
+        egress_id            TEXT        NOT NULL UNIQUE,
+        text                 TEXT        NOT NULL,
+        words_json           JSONB       NOT NULL DEFAULT '[]',
+        confidence           NUMERIC(5,4),
+        duration_sec         INTEGER,
+        model                TEXT        NOT NULL DEFAULT 'nova-3',
+        language             TEXT        NOT NULL DEFAULT 'en',
+        created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);`,
 	}
 	for _, table := range tables {
 		_, err := db.Exec(table)
@@ -178,6 +227,12 @@ func InitDB(dsn string, cfg Config) error {
 		`CREATE INDEX IF NOT EXISTS idx_room_participants_room ON room_participants(room_livekit_name);`,
 		`CREATE INDEX IF NOT EXISTS idx_room_participants_ident ON room_participants(identity);`,
 		`CREATE INDEX IF NOT EXISTS idx_webhook_events_received_at ON webhook_events(received_at);`,
+		`CREATE INDEX IF NOT EXISTS idx_recordings_room ON recordings(room_livekit_name);`,
+		`CREATE INDEX IF NOT EXISTS idx_recordings_egress_id ON recordings(egress_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_recordings_status ON recordings(status);`,
+		`CREATE INDEX IF NOT EXISTS idx_job_queue_status_next ON job_queue(status, next_run_at) WHERE status = 'pending';`,
+		`CREATE INDEX IF NOT EXISTS idx_transcripts_room ON transcripts(room_livekit_name);`,
+		`CREATE INDEX IF NOT EXISTS idx_transcripts_recording ON transcripts(recording_id);`,
 	}
 	for _, index := range indexes {
 		_, err := db.Exec(index)
