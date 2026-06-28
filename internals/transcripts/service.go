@@ -39,6 +39,7 @@ type recordingRow struct {
 	id          int64
 	fileURL     sql.NullString
 	durationSec sql.NullInt32
+	roomTier    string
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -120,11 +121,11 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 		// Empty transcript (silent audio, processing error). Mark completed so
 		// the job doesn't loop forever — empty is a valid terminal state.
 		logger.App.Printf("[transcripts] empty transcript job_id=%s egress=%s", job.ID, payload.EgressID)
-		return s.persistTranscript(ctx, rec.id, payload, parsed)
+		return s.persistTranscript(ctx, rec.id, rec.roomTier, payload, parsed)
 	}
 
 	// 4+5. Persist transcript and enqueue summarize job atomically.
-	if err := s.persistTranscript(ctx, rec.id, payload, parsed); err != nil {
+	if err := s.persistTranscript(ctx, rec.id, rec.roomTier, payload, parsed); err != nil {
 		return fmt.Errorf("transcripts.Handle: persist: %w", err)
 	}
 
@@ -135,7 +136,7 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 
 // persistTranscript writes the transcript row and enqueues TypeSummarize
 // inside a single transaction.
-func (s *Service) persistTranscript(ctx context.Context, recordingID int64, payload jobs.TranscribePayload, parsed *ParsedTranscript) error {
+func (s *Service) persistTranscript(ctx context.Context, recordingID int64, roomTier string, payload jobs.TranscribePayload, parsed *ParsedTranscript) error {
 	wordsJSON, err := json.Marshal(parsed.Words)
 	if err != nil {
 		return fmt.Errorf("persistTranscript: marshal words: %w", err)
@@ -179,6 +180,7 @@ func (s *Service) persistTranscript(ctx context.Context, recordingID int64, payl
 	summarizePayload := jobs.SummarizePayload{
 		RoomLivekitName: payload.RoomLivekitName,
 		TranscriptID:    fmt.Sprintf("%d", transcriptID),
+		Category:        roomTier,
 	}
 	if err := s.jobClient.EnqueueTx(ctx, tx, jobs.TypeSummarize, summarizePayload); err != nil {
 		return fmt.Errorf("persistTranscript: enqueue summarize: %w", err)
@@ -187,15 +189,14 @@ func (s *Service) persistTranscript(ctx context.Context, recordingID int64, payl
 	return tx.Commit()
 }
 
-// fetchRecording queries the recordings table for the given egress_id.
-// Returns sql.ErrNoRows wrapped in a descriptive error if not found.
 func (s *Service) fetchRecording(ctx context.Context, egressID string) (*recordingRow, error) {
 	var rec recordingRow
 	err := db.DB.QueryRowContext(ctx, `
-		SELECT id, file_url, duration_sec
-		FROM recordings
-		WHERE egress_id = $1
-	`, egressID).Scan(&rec.id, &rec.fileURL, &rec.durationSec)
+		SELECT r.id, r.file_url, r.duration_sec, COALESCE(rm.tier, 'guest')
+		FROM   recordings r
+		LEFT JOIN rooms rm ON rm.livekit_room_name = r.room_livekit_name
+		WHERE  r.egress_id = $1
+	`, egressID).Scan(&rec.id, &rec.fileURL, &rec.durationSec, &rec.roomTier)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("transcripts: recording not found for egress_id=%s", egressID)
 	}

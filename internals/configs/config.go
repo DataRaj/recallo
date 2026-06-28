@@ -76,10 +76,16 @@ type DeepgramConfig struct {
 // SpacesConfig groups DigitalOcean Spaces (S3-compatible) credentials.
 // Used by the transcripts package to presign GET URLs for Deepgram fetch.
 type SpacesConfig struct {
-	Endpoint  string `env:"SPACES_ENDPOINT"   env-default:""`  // e.g. https://nyc3.digitaloceanspaces.com
+	Endpoint  string `env:"SPACES_ENDPOINT"   env-default:""` // e.g. https://nyc3.digitaloceanspaces.com
 	Bucket    string `env:"SPACES_BUCKET"     env-default:""`
 	AccessKey string `env:"SPACES_ACCESS_KEY" env-default:""`
 	SecretKey string `env:"SPACES_SECRET_KEY" env-default:""`
+}
+
+type OpenAIConfig struct {
+	APIKey     string `env:"OPENAI_API_KEY" env-default:""`
+	Model      string `env:"OPENAI_MODEL"       env-default:"gpt-4o-mini"`
+	TimeoutSec int    `env:"OPENAI_TIMEOUT_SEC" env-default:"120"`
 }
 
 // Config is the full application configuration loaded from an .env file.
@@ -107,6 +113,8 @@ type Config struct {
 
 	// Spaces groups DigitalOcean Spaces credentials for recording storage.
 	Spaces SpacesConfig
+
+	OpenAI OpenAIConfig
 
 	HTTPServer
 }
@@ -182,6 +190,10 @@ func LoadConfig() *Config {
 			"[config] GUEST_MAX_VIDEO_QUALITY must be one of: low, medium, high — got %q",
 			cfg.GuestTier.MaxVideoQuality,
 		)
+	}
+
+	if cfg.OpenAI.APIKey == "" {
+		log.Fatal("[config] OPENAI_API_KEY must not be empty")
 	}
 
 	log.Printf(
