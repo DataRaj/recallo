@@ -47,8 +47,8 @@ type TranscribePayload struct {
 	FileURL         string `json:"file_url"` // public or presigned Spaces URL
 }
 
-// SummarizePayload is enqueued by the transcription worker on success.
 type SummarizePayload struct {
 	RoomLivekitName string `json:"room_livekit_name"`
 	TranscriptID    string `json:"transcript_id"`
+	Category        string `json:"category"`
 }

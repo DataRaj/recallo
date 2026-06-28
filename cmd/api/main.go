@@ -20,6 +20,7 @@ import (
 	"recallo/internals/realtime"
 	"recallo/internals/rooms"
 	"recallo/internals/routes"
+	"recallo/internals/summaries"
 	"recallo/internals/transcripts"
 	"recallo/internals/utils"
 	"recallo/internals/webhooks"
@@ -85,11 +86,11 @@ func main() {
 	// Transcript service: post-session Deepgram batch pipeline.
 	// Presigns DO Spaces GET URLs; Deepgram fetches the file directly.
 	transcriptSvc := transcripts.NewService(db.DB, cfg.Deepgram, cfg.Spaces, jobClient)
+	summarySvc := summaries.NewService(db.DB, cfg.OpenAI)
 
 	workerPool := jobs.NewWorkerPool(db.DB, rdb)
 	workerPool.Register(jobs.TypeTranscribe, transcriptSvc.Handle)
-	// TODO: register summarySvc.Handle when internals/summaries is implemented:
-	// workerPool.Register(jobs.TypeSummarize, summarySvc.Handle)
+	workerPool.Register(jobs.TypeSummarize, summarySvc.Handle)
 	workerCtx, stopWorkers := context.WithCancel(context.Background())
 	go workerPool.Start(workerCtx, map[jobs.JobType]int{
 		jobs.TypeTranscribe: 3,

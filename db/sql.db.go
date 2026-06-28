@@ -76,11 +76,12 @@ func InitDB(dsn string, cfg Config) error {
         email TEXT NOT NULL UNIQUE,
         password TEXT NOT NULL,
         refresh_token_web TEXT,
-        refresh_token_web_at TIMESTAMP,
+        refresh_token_web_updated_at TIMESTAMP,
         refresh_token_mobile TEXT,
-        refresh_token_mobile_at TIMESTAMP,
+        refresh_token_mobile_updated_at TIMESTAMP,
         avatar_url TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		);`,
 
 		// Privates
@@ -205,6 +206,20 @@ func InitDB(dsn string, cfg Config) error {
         language             TEXT        NOT NULL DEFAULT 'en',
         created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);`,
+
+		`CREATE TABLE IF NOT EXISTS summaries (
+        id                   BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        transcript_id        BIGINT      NOT NULL UNIQUE REFERENCES transcripts(id),
+        room_livekit_name    TEXT        NOT NULL,
+        category             TEXT        NOT NULL DEFAULT 'business_sync',
+        executive_summary    TEXT        NOT NULL,
+        key_points           JSONB       NOT NULL DEFAULT '[]',
+        action_items         JSONB       NOT NULL DEFAULT '[]',
+        decisions_made       JSONB       NOT NULL DEFAULT '[]',
+        discussion_tags      JSONB       NOT NULL DEFAULT '[]',
+        model                TEXT        NOT NULL DEFAULT 'gpt-4o-mini',
+        created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);`,
 	}
 	for _, table := range tables {
 		_, err := db.Exec(table)
@@ -233,6 +248,9 @@ func InitDB(dsn string, cfg Config) error {
 		`CREATE INDEX IF NOT EXISTS idx_job_queue_status_next ON job_queue(status, next_run_at) WHERE status = 'pending';`,
 		`CREATE INDEX IF NOT EXISTS idx_transcripts_room ON transcripts(room_livekit_name);`,
 		`CREATE INDEX IF NOT EXISTS idx_transcripts_recording ON transcripts(recording_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_summaries_transcript ON summaries(transcript_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_summaries_room ON summaries(room_livekit_name);`,
+		`CREATE INDEX IF NOT EXISTS idx_summaries_tags ON summaries USING GIN (discussion_tags jsonb_path_ops);`,
 	}
 	for _, index := range indexes {
 		_, err := db.Exec(index)
