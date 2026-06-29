@@ -19,13 +19,21 @@ import (
 
 func HandleWebSocketConnection(hub *realtime.Hub, w http.ResponseWriter, r *http.Request) {
 	authHeader := r.Header.Get(middleware.CtxAuthorization)
-	if authHeader == "" || !strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+	accessToken := ""
+
+	if authHeader != "" && strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+		accessToken = strings.TrimSpace(authHeader[7:])
+	} else {
+		// Fallback for browser WebSocket clients which cannot send custom headers
+		accessToken = r.URL.Query().Get("token")
+	}
+
+	if accessToken == "" {
 		logger.App.Printf("[WEBSOCKET] error=missing_or_invalid_auth_header remote=%s", r.RemoteAddr)
 		utils.JSON(w, http.StatusUnauthorized, false, "User is unauthorized", nil)
 		return
 	}
 
-	accessToken := strings.TrimSpace(authHeader[7:])
 	userId, _, _, err := utils.VerifyJWT(accessToken)
 	if err != nil {
 		logger.App.Printf("[WEBSOCKET] error=invalid_jwt remote=%s err=%v", r.RemoteAddr, err)
