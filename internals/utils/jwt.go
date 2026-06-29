@@ -42,7 +42,7 @@ func GenerateJwtToken(id int64, name, platform string) (string, error) {
 }
 
 func VerifyJWT(tokenStr string) (int64, string, string, error) {
-	token, err := jwt.ParseWithClaims(tokenStr, CustomClaims{}, func(w *jwt.Token) (any, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, &CustomClaims{}, func(w *jwt.Token) (any, error) {
 		_, ok := w.Method.(*jwt.SigningMethodHMAC)
 		if !ok {
 			return nil, errors.New("unexpected signin method!")

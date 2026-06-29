@@ -34,7 +34,7 @@ func CreateMessage(m *Message) error {
 	}
 
 	_, err = db.Exec(
-		"INSERT INTO messages (from_id, private_id, message_type, content, delivered, read) VALUES (?, ?, ?, ?, ?, ?)",
+		"INSERT INTO messages (from_id, private_id, message_type, content, delivered, read) VALUES ($1, $2, $3, $4, $5, $6)",
 		m.FromID,
 		m.PrivateID,
 		m.MessageType,
@@ -61,9 +61,9 @@ func GetMessagesByPrivateID(privateId int64, page, limit int) ([]*Message, error
 		`
 		SELECT id, from_id, private_id, message_type, content, delivered, read, created_at
 		FROM messages
-		WHERE private_id = ?
+		WHERE private_id = $1
 		ORDER BY created_at DESC
-		LIMIT ? OFFSET ?
+		LIMIT $2 OFFSET $3
 		`,
 		privateId,
 		limit,
@@ -108,7 +108,7 @@ func GetMessageByID(messageId int64) (*Message, error) {
 	var m Message
 	var deliveredInt, readInt int
 	err = db.QueryRow(
-		"SELECT id, from_id, private_id, message_type, content, delivered, read, created_at FROM messages WHERE id = ?",
+		"SELECT id, from_id, private_id, message_type, content, delivered, read, created_at FROM messages WHERE id = $1",
 		messageId,
 	).Scan(
 		&m.ID,
@@ -139,7 +139,7 @@ func GetUndeliveredMessagesByPrivateID(privateId int64) ([]*Message, error) {
 		`
 		SELECT id, from_id, private_id, message_type, content, delivered, read, created_at
 		FROM messages
-		WHERE private_id = ? AND delivered = 0
+		WHERE private_id = $1 AND delivered = 0
 		ORDER BY created_at DESC
 		`,
 		privateId,
@@ -187,9 +187,9 @@ func MarkAllIncomingMessagesAsDelivered(userID int64) error {
 		UPDATE messages
 		SET delivered = 1
 		WHERE delivered = 0
-		  AND from_id != ?
+		  AND from_id != $1
 		  AND private_id IN (
-		      SELECT id FROM privates WHERE user1_id = ? OR user2_id = ?
+		      SELECT id FROM privates WHERE user1_id = $2 OR user2_id = $3
 		  )
 	`, userID, userID, userID)
 
@@ -202,7 +202,7 @@ func MarkMessageAsDelivered(messageId int64) error {
 		return err
 	}
 
-	_, err = db.Exec("UPDATE messages SET delivered = 1 WHERE id = ?", messageId)
+	_, err = db.Exec("UPDATE messages SET delivered = 1 WHERE id = $1", messageId)
 	if err != nil {
 		return err
 	}
@@ -216,7 +216,7 @@ func MarkMessageAsRead(messageId int64) error {
 		return err
 	}
 
-	_, err = db.Exec("UPDATE messages SET read = 1 WHERE id = ?", messageId)
+	_, err = db.Exec("UPDATE messages SET read = 1 WHERE id = $1", messageId)
 	if err != nil {
 		return err
 	}

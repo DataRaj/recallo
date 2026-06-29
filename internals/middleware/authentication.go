@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"recallo/internals/logger"
 	"recallo/internals/utils"
 )
 
@@ -17,8 +18,11 @@ const (
 
 func Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log := logger.FromContext(r.Context())
+
 		authHeader := strings.TrimSpace(r.Header.Get(CtxAuthorization))
 		if authHeader == "" || !strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+			log.Warn("authentication failed: missing or invalid authorization header")
 			utils.JSON(w, http.StatusUnauthorized, false, "Unauthorized", nil)
 			return
 		}
@@ -27,6 +31,7 @@ func Authenticate(next http.Handler) http.Handler {
 
 		userId, name, tokenPlatform, err := utils.VerifyJWT(accessToken)
 		if err != nil {
+			log.Warn("authentication failed: invalid jwt token", "error", err)
 			utils.JSON(w, http.StatusUnauthorized, false, "Unauthorized", nil)
 			return
 		}
@@ -37,11 +42,13 @@ func Authenticate(next http.Handler) http.Handler {
 		}
 
 		if platform != utils.PlatformWeb && platform != utils.PlatformMobile {
+			log.Warn("authentication failed: invalid platform header", "platform", platform)
 			utils.JSON(w, http.StatusBadRequest, false, "Invalid platform", nil)
 			return
 		}
 
 		if tokenPlatform != platform {
+			log.Warn("authentication failed: platform mismatch", "token_platform", tokenPlatform, "request_platform", platform)
 			utils.JSON(w, http.StatusUnauthorized, false, "Unauthorized", nil)
 			return
 		}
