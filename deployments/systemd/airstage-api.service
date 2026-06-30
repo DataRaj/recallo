@@ -1,0 +1,24 @@
+[Unit]
+Description=Airstage API Server
+After=network.target redis.service
+Requires=redis.service
+
+[Service]
+Type=simple
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/airstage
+EnvironmentFile=/opt/airstage/.env
+ExecStart=/opt/airstage/bin/airstage
+Restart=always
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+TimeoutStopSec=25s
+KillSignal=SIGTERM
+KillMode=process
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target
