@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -20,29 +22,31 @@ const (
 )
 
 func HandleGetPrivate(w http.ResponseWriter, r *http.Request) {
+	log := logger.FromContext(r.Context())
 	privateIDStr := r.PathValue("private_id")
 	privateID, err := strconv.ParseInt(privateIDStr, 10, 64)
 	if err != nil {
-		logger.App.Printf("[GET_PRIVATE] error=invalid_private_id raw=%q", privateIDStr)
+		log.Warn("invalid private_id", "raw_id", privateIDStr, "error", err)
 		utils.JSON(w, http.StatusBadRequest, false, "invalid private_id", nil)
 		return
 	}
 
 	private, err := models.GetPrivateByID(privateID)
 	if err != nil {
-		logger.App.Printf("[GET_PRIVATE] error=not_found private_id=%d err=%v", privateID, err)
+		log.Error("failed to find private conversation", "private_id", privateID, "error", err)
 		utils.JSON(w, http.StatusNotFound, false, "private conversation not found", nil)
 		return
 	}
 
-	logger.App.Printf("[GET_PRIVATE] success private_id=%d", privateID)
+	log.Debug("retrieved private conversation", "private_id", privateID)
 	utils.JSON(w, http.StatusOK, true, "private conversation retrieved successfully", private)
 }
 
 func HandleJoinPrivate(w http.ResponseWriter, r *http.Request) {
+	log := logger.FromContext(r.Context())
 	userID, ok := r.Context().Value(middleware.CtxUserID).(int64)
 	if !ok {
-		logger.App.Printf("[JOIN_PRIVATE] error=missing_user_id_in_context remote=%s", r.RemoteAddr)
+		log.Error("missing user_id in request context")
 		utils.JSON(w, http.StatusUnauthorized, false, "Unauthorized", nil)
 		return
 	}
@@ -53,60 +57,80 @@ func HandleJoinPrivate(w http.ResponseWriter, r *http.Request) {
 	err := json.NewDecoder(r.Body).Decode(&req)
 	defer r.Body.Close()
 	if err != nil || req.ReceiverId == 0 {
-		logger.App.Printf("[JOIN_PRIVATE] error=invalid_body user_id=%d err=%v", userID, err)
+		log.Warn("invalid request body for joining private conversation", "user_id", userID, "error", err)
 		utils.JSON(w, http.StatusBadRequest, false, "invalid requested data", nil)
+		return
+	}
+
+	if userID == req.ReceiverId {
+		log.Warn("user attempted to start a conversation with themselves", "user_id", userID)
+		utils.JSON(w, http.StatusBadRequest, false, "cannot start a conversation with yourself", nil)
+		return
+	}
+
+	_, err = models.GetUserByID(req.ReceiverId)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			log.Warn("receiver not found", "receiver_id", req.ReceiverId)
+			utils.JSON(w, http.StatusNotFound, false, "receiver not found", nil)
+			return
+		}
+		log.Error("failed to query receiver", "receiver_id", req.ReceiverId, "error", err)
+		utils.JSON(w, http.StatusInternalServerError, false, "internal server error", nil)
 		return
 	}
 
 	private, err := models.GetPrivateByUsers(userID, req.ReceiverId)
 	if err != nil {
-		logger.App.Printf("[JOIN_PRIVATE] error=get_private user_id=%d receiver_id=%d err=%v", userID, req.ReceiverId, err)
+		log.Error("failed to query private conversation by users", "user_id: ", userID, "receiver_id: ", req.ReceiverId, "error", err)
 		utils.JSON(w, http.StatusInternalServerError, false, "failed to retrieve private conversation", nil)
 		return
 	}
 
 	if private != nil {
-		logger.App.Printf("[JOIN_PRIVATE] existing_private user_id=%d receiver_id=%d private_id=%d", userID, req.ReceiverId, private.ID)
+		log.Debug("existing private conversation found", "user_id", userID, "receiver_id", req.ReceiverId, "private_id", private.ID)
 		utils.JSON(w, http.StatusOK, true, "private conversation retrieved successfully", private)
 		return
 	}
 
 	private, err = models.CreatePrivate(userID, req.ReceiverId)
 	if err != nil {
-		logger.App.Printf("[JOIN_PRIVATE] error=create_private user_id=%d receiver_id=%d err=%v", userID, req.ReceiverId, err)
+		log.Error("failed to create private conversation", "user_id", userID, "receiver_id", req.ReceiverId, "error", err)
 		utils.JSON(w, http.StatusInternalServerError, false, "failed to create private conversation", nil)
 		return
 	}
 
-	logger.App.Printf("[JOIN_PRIVATE] created_private user_id=%d receiver_id=%d private_id=%d", userID, req.ReceiverId, private.ID)
+	log.Info("created private conversation", "user_id", userID, "receiver_id", req.ReceiverId, "private_id", private.ID)
 	utils.JSON(w, http.StatusCreated, true, "private conversation created successfully", private)
 }
 
 func HandleGetConversations(w http.ResponseWriter, r *http.Request) {
+	log := logger.FromContext(r.Context())
 	userID, ok := r.Context().Value(middleware.CtxUserID).(int64)
 	if !ok {
-		logger.App.Printf("[GET_CONVERSATIONS] error=missing_user_id_in_context remote=%s", r.RemoteAddr)
+		log.Error("missing user_id in request context")
 		utils.JSON(w, http.StatusUnauthorized, false, "Unauthorized", nil)
 		return
 	}
 
 	privates, err := models.GetPrivatesForUser(userID)
 	if err != nil {
-		logger.App.Printf("[GET_CONVERSATIONS] error=db user_id=%d err=%v", userID, err)
+		log.Error("failed to retrieve conversations from db", "user_id", userID, "error", err)
 		utils.JSON(w, http.StatusInternalServerError, false, "failed to retrieve conversations", nil)
 		return
 	}
 
-	logger.App.Printf("[GET_CONVERSATIONS] success user_id=%d count=%d", userID, len(privates))
+	log.Debug("retrieved conversations list", "user_id", userID, "count", len(privates))
 	utils.JSON(w, http.StatusOK, true, "conversations retrieved successfully", privates)
 }
 
 func HandleGetPrivateMessages(w http.ResponseWriter, r *http.Request) {
+	log := logger.FromContext(r.Context())
 	privateIdStr := r.PathValue("private_id")
 
 	privateID, err := strconv.ParseInt(privateIdStr, 10, 64)
 	if err != nil {
-		logger.App.Printf("[GET_MESSAGES] error=invalid_private_id raw=%q", privateIdStr)
+		log.Warn("invalid private_id in message retrieval", "raw_id", privateIdStr, "error", err)
 		utils.JSON(w, http.StatusBadRequest, false, "Invalid private id", nil)
 		return
 	}
@@ -115,28 +139,30 @@ func HandleGetPrivateMessages(w http.ResponseWriter, r *http.Request) {
 	limit := defaultLimit
 
 	if p := r.URL.Query().Get("page"); p != "" {
-		page, err = strconv.Atoi(p)
-		if err != nil || page < 1 {
-			logger.App.Printf("[GET_MESSAGES] error=invalid_page raw=%q private_id=%d", p, privateID)
+		var parseErr error
+		page, parseErr = strconv.Atoi(p)
+		if parseErr != nil || page < 1 {
+			log.Warn("invalid page number", "raw_page", p, "private_id", privateID, "error", parseErr)
 			utils.JSON(w, http.StatusBadRequest, false, "invalid page number", nil)
 			return
 		}
 	}
 
 	if l := r.URL.Query().Get("limit"); l != "" {
-		limit, err = strconv.Atoi(l)
-		if err != nil || limit < 1 || limit > maxLimit {
-			logger.App.Printf("[GET_MESSAGES] error=invalid_limit raw=%q private_id=%d", l, privateID)
+		var parseErr error
+		limit, parseErr = strconv.Atoi(l)
+		if parseErr != nil || limit < 1 || limit > maxLimit {
+			log.Warn("invalid limit number", "raw_limit", l, "private_id", privateID, "error", parseErr)
 			utils.JSON(w, http.StatusBadRequest, false, "invalid limit number (must be between 1 and 100)", nil)
 			return
 		}
 	}
 
-	logger.App.Printf("[GET_MESSAGES] fetching private_id=%d page=%d limit=%d", privateID, page, limit)
+	log.Debug("fetching private messages", "private_id", privateID, "page", page, "limit", limit)
 
 	messages, err := models.GetMessagesByPrivateID(privateID, page, limit+1)
 	if err != nil {
-		logger.App.Printf("[GET_MESSAGES] error=db private_id=%d page=%d limit=%d err=%v", privateID, page, limit, err)
+		log.Error("failed to retrieve messages from database", "private_id", privateID, "page", page, "limit", limit, "error", err)
 		utils.JSON(w, http.StatusInternalServerError, false, "failed to retrieve messages", nil)
 		return
 	}
@@ -147,7 +173,7 @@ func HandleGetPrivateMessages(w http.ResponseWriter, r *http.Request) {
 		messages = messages[:limit]
 	}
 
-	logger.App.Printf("[GET_MESSAGES] success private_id=%d page=%d limit=%d count=%d has_next=%v", privateID, page, limit, len(messages), hasNextPage)
+	log.Debug("successfully retrieved messages", "private_id", privateID, "page", page, "limit", limit, "count", len(messages), "has_next", hasNextPage)
 	utils.JSON(w, http.StatusOK, true, "messages retrieved successfully", map[string]any{
 		"messages":      messages,
 		"page":          page,

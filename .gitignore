@@ -1,13 +1,15 @@
 # ── Secrets & Environment Files ──────────────────────────────────────────────
 # Ignore ALL .env files everywhere
 *.env
+config/*.env
+config/dev.env
+config/config.env
 
 # Ignore the entire config/ directory (contains real secrets)
 config/
 
 # Keep the example template so new contributors can onboard
 !env.example
-dev.env
 
 # ── Build Artifacts ───────────────────────────────────────────────────────────
 # Compiled binaries (old name + new name)

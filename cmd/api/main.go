@@ -10,18 +10,26 @@ import (
 	"time"
 
 	"recallo/db"
+	"recallo/internals/cache"
 	"recallo/internals/configs"
 	"recallo/internals/handlers"
+	"recallo/internals/jobs"
+	livekit "recallo/internals/livekit"
 	"recallo/internals/logger"
 	"recallo/internals/middleware"
 	"recallo/internals/realtime"
+	"recallo/internals/rooms"
 	"recallo/internals/routes"
+	"recallo/internals/summaries"
+	"recallo/internals/transcripts"
 	"recallo/internals/utils"
+	"recallo/internals/webhooks"
 )
 
 func main() {
 	cfg := configs.LoadConfig()
 
+	// ── Logger ────────────────────────────────────────────────────────────────
 	// Initialise shared logger — writes to stdout AND logs/app.log.
 	closeLog, err := logger.Init()
 	if err != nil {
@@ -31,23 +39,77 @@ func main() {
 
 	logger.App.Printf("[startup] logger initialised — output also tailing logs/app.log")
 
-	// Initialise JWT signing key so all handlers can sign/verify tokens.
+	// ── Auth ──────────────────────────────────────────────────────────────────
 	utils.InitJWT(cfg.JWTSecretKey)
-
-	// Initialise OAuth configs.
 	handlers.InitOAuth(cfg.GithubClientID, cfg.GithubClientSecret, cfg.GithubOAuthRedirectURL)
 
-	// Initialise PostgreSQL connection pool and run schema migrations.
+	// ── Database ──────────────────────────────────────────────────────────────
 	if err := db.InitDB(cfg.DatabaseURL, db.DefaultConfig()); err != nil {
 		log.Fatalf("[startup] failed to initialise database: %v", err)
 	}
 	defer db.CloseDBConnection()
 
+	// ── Redis ─────────────────────────────────────────────────────────────────
+	// Passed explicitly to every component that needs it — no global.
+	rdb, err := cache.Connect(cfg.RedisURL)
+	if err != nil {
+		log.Fatalf("[startup] failed to connect to Redis: %v", err)
+	}
+	defer rdb.Close()
+	logger.App.Printf("[startup] Redis connected url=%s", cfg.RedisURL)
+
+	// ── Job client ────────────────────────────────────────────────────────────
+	// Dual-write: Postgres (durable) + Redis LIST (fast BRPOP path).
+	jobClient := jobs.NewClient(db.DB, rdb)
+
+	// ── LiveKit service ───────────────────────────────────────────────────────
+	// NewService constructs the gRPC RoomServiceClient + token access key.
+	// Passed explicitly to every component that needs LiveKit access —
+	// no global state, no package-level singletons.
+	lkService, err := livekit.NewService(cfg.LiveKit)
+	if err != nil {
+		log.Fatalf("[startup] failed to initialise livekit service: %v", err)
+	}
+	logger.App.Printf("[startup] livekit service connected host=%s", cfg.LiveKit.Host)
+
+	// ── Rooms domain ──────────────────────────────────────────────────────────
+	// roomsSvc depends on the LiveKitService interface (not the concrete *livekit.Service type).
+	// The interface is declared in the rooms package (Kennedy's rule: interface at consumer).
+	roomsSvc := rooms.NewService(lkService, cfg.GuestTier)
+	roomsHandler := rooms.NewHandler(roomsSvc)
+
+	// ── Webhook handler ───────────────────────────────────────────────────────
+	// Receives jobClient so egress_ended can atomically enqueue a transcription job.
+	webhookHandler := webhooks.NewHandler(cfg.LiveKit.APIKey, cfg.LiveKit.WebhookSecret, jobClient)
+
+	// ── Worker pool ───────────────────────────────────────────────────────────
+	// Transcript service: post-session Deepgram batch pipeline.
+	// Presigns DO Spaces GET URLs; Deepgram fetches the file directly.
+	transcriptSvc := transcripts.NewService(db.DB, cfg.Deepgram, cfg.Spaces, jobClient)
+	summarySvc := summaries.NewService(db.DB, cfg.OpenAI)
+
+	workerPool := jobs.NewWorkerPool(db.DB, rdb)
+	workerPool.Register(jobs.TypeTranscribe, transcriptSvc.Handle)
+	workerPool.Register(jobs.TypeSummarize, summarySvc.Handle)
+	workerCtx, stopWorkers := context.WithCancel(context.Background())
+	go workerPool.Start(workerCtx, map[jobs.JobType]int{
+		jobs.TypeTranscribe: 3,
+		jobs.TypeSummarize:  2,
+	})
+
+	// ── WebSocket hub ─────────────────────────────────────────────────────────
 	hub := realtime.NewHub()
 	defer hub.Shutdown()
 
-	// Build route handler (CORS already applied inside RegisterRoutes).
-	routeHandler := routes.RegisterRoutes(hub)
+	// ── Session enforcer ──────────────────────────────────────────────────────
+	// Background goroutine that ends guest rooms when their session duration elapses.
+	// Runs every 60 seconds. Stopped cleanly when ctx is cancelled on shutdown.
+	enforcerCtx, stopEnforcer := context.WithCancel(context.Background())
+	enforcer := rooms.NewSessionEnforcer(roomsSvc, 60*time.Second)
+	go enforcer.Run(enforcerCtx)
+
+	// ── Routes ────────────────────────────────────────────────────────────────
+	routeHandler := routes.RegisterRoutes(hub, roomsHandler, webhookHandler)
 
 	// Apply logging middleware on top of the route handler.
 	handler := middleware.Loggingmiddleware(routeHandler)
@@ -80,6 +142,14 @@ func main() {
 		logger.App.Printf("  POST /api/v1/files/{private_id}       [protected]")
 		logger.App.Printf("  GET  /api/v1/files/                   [protected]")
 		logger.App.Printf("  GET  /api/v1/ws                       [websocket]")
+		// LiveKit / rooms routes
+		logger.App.Printf("  POST   /api/v1/rooms                  [guest - public]")
+		logger.App.Printf("  GET    /api/v1/rooms/{id}             [guest - public]")
+		logger.App.Printf("  DELETE /api/v1/rooms/{id}             [guest - host only]")
+		logger.App.Printf("  GET    /api/v1/rooms/{id}/token       [guest - token boundary]")
+		logger.App.Printf("  POST   /api/v1/rooms/{id}/extend      [guest - one-time extend]")
+		logger.App.Printf("  POST   /webhooks/livekit              [livekit webhook receiver]")
+
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.App.Printf("[server] fatal err=%v", err)
 		}
@@ -88,7 +158,14 @@ func main() {
 	sig := <-shutdownCh
 	logger.App.Printf("[server] signal received: %v — initiating graceful shutdown", sig)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Stop workers before draining HTTP: no new jobs while server is shutting down.
+	stopWorkers()
+	// Stop the session enforcer first so it doesn't trigger new EndRoom calls
+	// while the HTTP server is draining.
+	stopEnforcer()
+
+	// Drain existing HTTP connections (20s window).
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {

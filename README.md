@@ -2,7 +2,7 @@
 
 > **Real-time private messaging backend** built in Go — clean architecture, WebSocket hub, JWT auth, and file sharing over a Postgres-backed REST API.
 
----
+--
 
 ## What is Recallo?
 

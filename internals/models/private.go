@@ -1,17 +1,19 @@
 package models
 
 import (
+	"database/sql"
 	"errors"
 	"time"
 
 	"recallo/db"
+	"recallo/internals/logger"
 )
 
 type Private struct {
 	ID        int64     `json:"id"`
 	User1     string    `json:"user1"`
 	User2     string    `json:"user2"`
-	CreatedAt time.Time `json:created_at`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func GetPrivateByID(privateId int64) (*Private, error) {
@@ -21,7 +23,7 @@ func GetPrivateByID(privateId int64) (*Private, error) {
 	}
 
 	var private Private
-	err = db.QueryRow("SELECT id, user1_id, user2_id, created_at FROM privates WHERE id = ?", privateId).Scan(
+	err = db.QueryRow("SELECT id, user1_id, user2_id, created_at FROM privates WHERE id = $1", privateId).Scan(
 		&private.ID,
 		&private.User1,
 		&private.User2,
@@ -45,13 +47,16 @@ func GetPrivateByUsers(user1Id, user2Id int64) (*Private, error) {
 	}
 
 	var private Private
-	err = db.QueryRow("SELECT id, user1_id, user2_id, created_at FROM privates WHERE user1_id = ? AND user2_id = ?", user1Id, user2Id).Scan(
+	err = db.QueryRow("SELECT id, user1_id, user2_id, created_at FROM privates WHERE user1_id = $1 AND user2_id = $2", user1Id, user2Id).Scan(
 		&private.ID,
 		&private.User1,
 		&private.User2,
 		&private.CreatedAt,
 	)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
 		return nil, err
 	}
 
@@ -68,7 +73,7 @@ func GetPrivatesForUser(userId int64) ([]*Private, error) {
 		`
 		SELECT id, user1_id, user2_id, created_at
 		FROM privates
-		WHERE user1_id = ? OR user2_id = ?
+		WHERE user1_id = $1 OR user2_id = $2
 		ORDER BY created_at DESC
 		`,
 		userId,
@@ -94,6 +99,7 @@ func GetPrivatesForUser(userId int64) ([]*Private, error) {
 		privates = append(privates, &private)
 	}
 
+	logger.Info(" here are the priavates data from the conversation api", &privates)
 	return privates, nil
 }
 
@@ -119,12 +125,8 @@ func CreatePrivate(user1Id, user2Id int64) (*Private, error) {
 		return existingPrivate, nil
 	}
 
-	result, err := db.Exec("INSERT INTO privates (user1_id, user2_id) VALUES (?, ?)", user1Id, user2Id)
-	if err != nil {
-		return nil, err
-	}
-
-	privateId, err := result.LastInsertId()
+	var privateId int64
+	err = db.QueryRow("INSERT INTO privates (user1_id, user2_id) VALUES ($1, $2) RETURNING id", user1Id, user2Id).Scan(&privateId)
 	if err != nil {
 		return nil, err
 	}

@@ -58,9 +58,6 @@ func (h *Hub) SendEventToUserIds(userIds []int64, sendId int64, eventType EventT
 		}
 
 		for client := range clients {
-			if client.User.ID == sendId {
-				continue
-			}
 			client.SendEvent(Event{
 				eventType,
 				payload,
